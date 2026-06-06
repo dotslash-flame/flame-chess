@@ -23,7 +23,7 @@ Components
 
 Status
 - [x] Phase 1: Skeleton — config, /healthz, schema, Docker compose.
-- [ ] Phase 2: Chess core (game package).
+- [x] Phase 2: Chess core (game package).
 - [ ] Phase 3: WS + Hub + quick-match (first playable).
 - [ ] Phase 4: Auth (Google OAuth + suffix gate).
 - [ ] Phase 5: Persistence & ratings.
