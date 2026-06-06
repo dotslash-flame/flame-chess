@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: flame
+      POSTGRES_PASSWORD: flame
+      POSTGRES_DB: flamechess
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flame -d flamechess"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://flame:flame@db:5432/flamechess?sslmode=disable"
+      SESSION_HMAC_SECRET: "change-me-in-prod"
+      ALLOWED_EMAIL_SUFFIX: "flame.edu.in"
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
