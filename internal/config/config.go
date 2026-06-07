@@ -16,6 +16,7 @@ type Config struct {
 	AllowedEmailSuffix string
 	ReconnectGraceSecs int
 	StartingRating     int
+	DevLogin           bool
 }
 
 func Load() (*Config, error) {
@@ -27,6 +28,7 @@ func Load() (*Config, error) {
 		GoogleRedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
 		SessionHMACSecret:  os.Getenv("SESSION_HMAC_SECRET"),
 		AllowedEmailSuffix: getEnv("ALLOWED_EMAIL_SUFFIX", "flame.edu.in"),
+		DevLogin:           getEnv("DEV_LOGIN", "true") != "false",
 	}
 
 	grace, err := getEnvInt("RECONNECT_GRACE_SECONDS", 30)

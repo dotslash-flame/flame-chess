@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlameChess — UX tester</title>
+<style>
+  :root { --light:#ebecd0; --dark:#779556; --sel:#f6f669; --bg:#2b2b2b; --panel:#363636; --txt:#e8e8e8; --muted:#9a9a9a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.4 system-ui,sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:8px 12px; background:#1f1f1f; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  header b { color:#e87b35; }
+  .wrap { display:flex; gap:16px; padding:12px; align-items:flex-start; flex-wrap:wrap; }
+  .col { display:flex; flex-direction:column; gap:10px; }
+  .panel { background:var(--panel); border-radius:8px; padding:10px 12px; }
+  .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  label { color:var(--muted); }
+  input { background:#222; color:var(--txt); border:1px solid #555; border-radius:4px; padding:4px 6px; }
+  input.short { width:70px; }
+  button { background:#4a4a4a; color:var(--txt); border:1px solid #666; border-radius:4px; padding:5px 10px; cursor:pointer; }
+  button:hover:not(:disabled) { background:#5a5a5a; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  button.primary { background:#e87b35; border-color:#e87b35; color:#1f1f1f; font-weight:600; }
+  #board { width:400px; height:400px; display:grid; grid-template-columns:repeat(8,1fr); border:2px solid #1f1f1f; }
+  .sq { display:flex; align-items:center; justify-content:center; font-size:34px; line-height:1; cursor:pointer; user-select:none; position:relative; }
+  .sq.l { background:var(--light); } .sq.d { background:var(--dark); }
+  .sq.sel { box-shadow: inset 0 0 0 4px var(--sel); }
+  .sq .coord { position:absolute; bottom:1px; right:2px; font-size:9px; color:#0006; }
+  .piece-w { color:#fff; text-shadow:0 0 2px #000, 0 1px 1px #0008; }
+  .piece-b { color:#111; text-shadow:0 0 1px #fff6; }
+  .clock { font:600 20px ui-monospace,monospace; padding:4px 8px; background:#222; border-radius:4px; min-width:88px; text-align:center; }
+  .clock.active { background:#e87b35; color:#1f1f1f; }
+  .clock.low { color:#ff6b6b; }
+  #log { width:380px; height:430px; overflow:auto; background:#1b1b1b; border-radius:8px; padding:8px; font:12px/1.45 ui-monospace,monospace; }
+  .ev { white-space:pre-wrap; word-break:break-all; padding:2px 0; border-bottom:1px solid #2a2a2a; }
+  .ev .dir { font-weight:700; margin-right:4px; }
+  .ev.out .dir { color:#6cb6ff; } .ev.in .dir { color:#8fd98f; } .ev.sys .dir { color:#caa; }
+  .ev.err { color:#ff8a8a; }
+  .pill { padding:2px 8px; border-radius:10px; background:#222; color:var(--muted); }
+  .pill.ok { color:#8fd98f; } .pill.warn { color:#e8c35b; }
+  h3 { margin:0 0 4px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .me { color:#e87b35; font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <b>FlameChess</b> UX tester
+  <span class="pill" id="wsState">ws: closed</span>
+  <span class="pill" id="onlinePill">online: ?</span>
+  <span style="margin-left:auto" id="whoami" class="muted">not logged in</span>
+</header>
+
+<div class="wrap">
+  <!-- LEFT: controls + board -->
+  <div class="col">
+    <div class="panel">
+      <h3>1 · Auth (dev-login)</h3>
+      <div class="row">
+        <label>name</label>
+        <input id="name" value="Alice" class="short" style="width:120px">
+        <button class="primary" id="loginBtn">Login</button>
+        <span id="authMsg" class="muted"></span>
+      </div>
+      <div class="muted" style="margin-top:6px;font-size:12px">Tip: run a 2nd player in an incognito window (separate cookie).</div>
+    </div>
+
+    <div class="panel">
+      <h3>2 · Queue</h3>
+      <div class="row">
+        <label>base(s)</label><input id="base" value="300" class="short">
+        <label>inc(s)</label><input id="inc" value="0" class="short">
+        <button id="joinBtn" disabled>Join</button>
+        <button id="leaveBtn" disabled>Leave</button>
+        <span id="queueMsg" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>3 · Board</h3>
+      <div id="board"></div>
+      <div class="row" style="margin-top:8px">
+        <label>UCI</label>
+        <input id="uci" placeholder="e2e4" class="short" style="width:90px">
+        <button id="uciBtn" disabled>Send move</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MIDDLE: game panel -->
+  <div class="col">
+    <div class="panel" style="min-width:240px">
+      <h3>4 · Game</h3>
+      <div class="row"><span class="muted">game:</span> <span id="gameId">—</span></div>
+      <div class="row"><span class="muted">you are</span> <span id="myColor" class="me">—</span>
+           <span class="muted">vs</span> <span id="oppName">—</span></div>
+      <div class="row" style="margin:8px 0 4px"><span class="muted">turn:</span> <span id="turn">—</span></div>
+      <div class="row">
+        <span>White</span> <span class="clock" id="clkW">—</span>
+        <span>Black</span> <span class="clock" id="clkB">—</span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button id="resignBtn" disabled>Resign</button>
+        <button id="drawBtn" disabled>Offer draw</button>
+      </div>
+      <div id="drawOffer" class="row" style="margin-top:8px;display:none">
+        <span class="pill warn">draw offered</span>
+        <button id="drawYes">Accept</button>
+        <button id="drawNo">Decline</button>
+      </div>
+      <div id="result" class="row" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: event log -->
+  <div class="col">
+    <div class="panel">
+      <h3>5 · Event log <button id="clearLog" style="float:right;padding:1px 6px">clear</button></h3>
+      <div id="log"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const PIECES = {K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',
+                k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟'};
+
+let ws=null, me=null;           // me = {uid,name}
+let state = { gameId:null, color:null, fen:null, turn:null, whiteMs:null, blackMs:null, opp:null, over:false };
+let sel = null;                 // selected square e.g. "e2"
+let clockTimer = null, lastTick = null;
+
+// ---------- logging ----------
+function log(dir, obj, cls){
+  const el = document.createElement('div');
+  el.className = 'ev ' + (cls||'');
+  const arrow = dir==='out'?'↑':dir==='in'?'↓':'•';
+  el.innerHTML = `<span class="dir">${arrow}</span>` +
+    (typeof obj==='string' ? escapeHtml(obj) : escapeHtml(JSON.stringify(obj)));
+  $('log').prepend(el);
+}
+function escapeHtml(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+$('clearLog').onclick = () => $('log').innerHTML='';
+
+// ---------- auth ----------
+$('loginBtn').onclick = async () => {
+  const name = $('name').value || 'anon';
+  try {
+    const r = await fetch('/auth/dev-login', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'name='+encodeURIComponent(name)
+    });
+    me = await r.json();
+    $('whoami').innerHTML = `<span class="me">${escapeHtml(me.name)}</span> <span class="muted">${me.uid}</span>`;
+    $('authMsg').textContent = 'cookie set';
+    log('sys', 'logged in as '+me.name+' ('+me.uid+')', 'sys');
+    connectWS();
+  } catch(e){ $('authMsg').textContent = 'login failed'; log('sys','login failed: '+e,'err'); }
+};
+
+// ---------- websocket ----------
+function connectWS(){
+  if (ws) { try{ws.close();}catch(_){} }
+  const proto = location.protocol==='https:' ? 'wss' : 'ws';
+  ws = new WebSocket(proto+'://'+location.host+'/ws');
+  ws.onopen = () => { setWsState('open'); enable(['joinBtn'],true); log('sys','ws open','sys'); };
+  ws.onclose = e => { setWsState('closed'); enableGame(false); enable(['joinBtn','leaveBtn'],false);
+                      log('sys','ws closed (code '+e.code+')','sys'); };
+  ws.onerror = () => log('sys','ws error','err');
+  ws.onmessage = ev => handle(JSON.parse(ev.data));
+}
+function setWsState(s){ $('wsState').textContent='ws: '+s; $('wsState').className='pill '+(s==='open'?'ok':''); }
+function send(obj){
+  if(!ws || ws.readyState!==1){ log('sys','cannot send, ws not open','err'); return; }
+  ws.send(JSON.stringify(obj)); log('out', obj, 'out');
+}
+
+// ---------- queue / game actions ----------
+$('joinBtn').onclick = () => send({type:'queue.join', category:'custom',
+  base:+$('base').value||0, increment:+$('inc').value||0});
+$('leaveBtn').onclick = () => send({type:'queue.leave'});
+$('resignBtn').onclick = () => state.gameId && send({type:'resign', game_id:state.gameId});
+$('drawBtn').onclick   = () => state.gameId && send({type:'draw.offer', game_id:state.gameId});
+$('drawYes').onclick   = () => { send({type:'draw.respond', game_id:state.gameId, accept:true}); hideDraw(); };
+$('drawNo').onclick    = () => { send({type:'draw.respond', game_id:state.gameId, accept:false}); hideDraw(); };
+$('uciBtn').onclick    = () => { const u=$('uci').value.trim(); if(u) sendMove(u); $('uci').value=''; };
+
+function sendMove(uci){
+  if(!state.gameId || state.over) return;
+  send({type:'move', game_id:state.gameId, uci});
+}
+
+// ---------- inbound frames ----------
+function handle(m){
+  log('in', m, m.type==='error'?'err':'in');
+  switch(m.type){
+    case 'online.count': $('onlinePill').textContent='online: '+m.n; break;
+    case 'queue.waiting': $('queueMsg').textContent='waiting for opponent…';
+      enable(['joinBtn'],false); enable(['leaveBtn'],true); break;
+    case 'game.start': onGameStart(m); break;
+    case 'game.state': onGameState(m); break;
+    case 'game.over': onGameOver(m); break;
+    case 'draw.offered': showDraw(m.from); break;
+    case 'pong': break;
+    case 'error': $('queueMsg').textContent='error: '+m.code+' — '+m.msg; break;
+  }
+}
+
+function onGameStart(m){
+  state = { gameId:m.game_id, color:m.color, fen:m.fen, turn:'white',
+            whiteMs:m.clocks.white_ms, blackMs:m.clocks.black_ms, opp:m.opponent, over:false };
+  $('queueMsg').textContent=''; $('result').innerHTML='';
+  $('gameId').textContent=m.game_id;
+  $('myColor').textContent=m.color;
+  $('oppName').textContent=m.opponent;
+  enable(['joinBtn','leaveBtn'],false);
+  enableGame(true);
+  render(); startClock();
+}
+function onGameState(m){
+  state.fen=m.fen; state.turn=m.turn; state.whiteMs=m.white_ms; state.blackMs=m.black_ms;
+  sel=null; render(); startClock();
+}
+function onGameOver(m){
+  state.over=true; stopClock(); enableGame(false);
+  $('turn').textContent='—';
+  $('result').innerHTML = `<span class="pill warn">${m.result} · ${m.reason}</span>`;
+  enable(['joinBtn'],true); hideDraw();
+}
+
+// ---------- draw ui ----------
+function showDraw(from){ $('drawOffer').style.display='flex';
+  log('sys','draw offered by '+from,'sys'); }
+function hideDraw(){ $('drawOffer').style.display='none'; }
+
+// ---------- clocks ----------
+function startClock(){
+  stopClock(); lastTick=performance.now();
+  clockTimer=setInterval(()=>{
+    const now=performance.now(), d=now-lastTick; lastTick=now;
+    if(state.over) return;
+    if(state.turn==='white') state.whiteMs=Math.max(0,state.whiteMs-d);
+    else state.blackMs=Math.max(0,state.blackMs-d);
+    paintClocks();
+  },100);
+  paintClocks();
+}
+function stopClock(){ if(clockTimer){clearInterval(clockTimer); clockTimer=null;} }
+function paintClocks(){
+  const fmt=ms=>{ms=Math.max(0,ms|0); const s=Math.floor(ms/1000),m=Math.floor(s/60);
+    return m+':'+String(s%60).padStart(2,'0');};
+  $('clkW').textContent=state.whiteMs==null?'—':fmt(state.whiteMs);
+  $('clkB').textContent=state.blackMs==null?'—':fmt(state.blackMs);
+  $('clkW').classList.toggle('active', !state.over && state.turn==='white');
+  $('clkB').classList.toggle('active', !state.over && state.turn==='black');
+  $('clkW').classList.toggle('low', state.whiteMs!=null && state.whiteMs<10000);
+  $('clkB').classList.toggle('low', state.blackMs!=null && state.blackMs<10000);
+  $('turn').textContent = state.over?'—':state.turn;
+}
+
+// ---------- board ----------
+function fenToBoard(fen){
+  const rows=fen.split(' ')[0].split('/'); const b={};
+  for(let r=0;r<8;r++){ let file=0; const rank=8-r;
+    for(const ch of rows[r]){
+      if(/\d/.test(ch)) file+=+ch;
+      else { b['abcdefgh'[file]+rank]=ch; file++; }
+    }
+  } return b;
+}
+function render(){
+  const board=$('board'); board.innerHTML='';
+  const pieces = state.fen ? fenToBoard(state.fen) : fenToBoard('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR');
+  const flip = state.color==='black';
+  const ranks = flip ? [1,2,3,4,5,6,7,8] : [8,7,6,5,4,3,2,1];
+  const files = flip ? ['h','g','f','e','d','c','b','a'] : ['a','b','c','d','e','f','g','h'];
+  for(const rank of ranks){
+    for(const file of files){
+      const sq=file+rank;
+      const cell=document.createElement('div');
+      const dark=( 'abcdefgh'.indexOf(file)+rank )%2===0;
+      cell.className='sq '+(dark?'d':'l')+(sq===sel?' sel':'');
+      const p=pieces[sq];
+      if(p){ const span=document.createElement('span');
+        span.textContent=PIECES[p]; span.className = p===p.toUpperCase()?'piece-w':'piece-b';
+        cell.appendChild(span); }
+      const co=document.createElement('span'); co.className='coord'; co.textContent=sq; cell.appendChild(co);
+      cell.onclick=()=>clickSquare(sq);
+      board.appendChild(cell);
+    }
+  }
+}
+function clickSquare(sq){
+  if(!state.gameId || state.over) return;
+  const pieces=fenToBoard(state.fen);
+  if(sel===null){ if(pieces[sq]){ sel=sq; render(); } return; }
+  if(sq===sel){ sel=null; render(); return; }
+  let uci=sel+sq;
+  const p=pieces[sel];
+  if((p==='P'&&sq[1]==='8')||(p==='p'&&sq[1]==='1')){
+    let pr=(prompt('Promote to? q/r/b/n','q')||'q').toLowerCase();
+    if(!'qrbn'.includes(pr)) pr='q'; uci+=pr;
+  }
+  sel=null; render(); sendMove(uci);
+}
+
+// ---------- enable helpers ----------
+function enable(ids,on){ ids.forEach(id=>$(id).disabled=!on); }
+function enableGame(on){ enable(['resignBtn','drawBtn','uciBtn'],on); if(!on) hideDraw(); }
+
+render(); // initial empty board
+</script>
+</body>
+</html>
