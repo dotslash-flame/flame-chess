@@ -32,6 +32,7 @@ const (
 
 type Conn interface {
 	UserID() string
+	DisplayName() string
 	Send(v any)
 	Close()
 }
