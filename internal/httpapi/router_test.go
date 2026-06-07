@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dotslash-flame/flame-chess/internal/auth"
+	"github.com/dotslash-flame/flame-chess/internal/config"
 	"github.com/dotslash-flame/flame-chess/internal/hub"
 	"github.com/dotslash-flame/flame-chess/internal/ws"
 )
@@ -14,7 +15,12 @@ import (
 const testSecret = "test-secret"
 
 func testRouter() http.Handler {
-	return NewRouter(hub.New(hub.Options{}), testSecret, true)
+	return NewRouter(hub.New(hub.Options{}), &config.Config{
+		SessionHMACSecret:  testSecret,
+		AllowedEmailSuffix: "flame.edu.in",
+		PostLoginRedirect:  "/",
+		DevLogin:           true,
+	})
 }
 
 func TestHealthz(t *testing.T) {
