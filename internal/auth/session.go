@@ -14,6 +14,7 @@ import (
 type Identity struct {
 	UserID      string `json:"uid"`
 	DisplayName string `json:"name"`
+	Email       string `json:"email,omitempty"`
 }
 
 var ErrInvalidSession = errors.New("invalid session cookie")
@@ -50,6 +51,11 @@ func Verify(cookie, secret string) (Identity, error) {
 
 func UserIDForName(name string) string {
 	sum := sha256.Sum256([]byte("flamechess-uid:" + name))
+	return "u-" + hex.EncodeToString(sum[:8])
+}
+
+func UserIDForSub(sub string) string {
+	sum := sha256.Sum256([]byte("flamechess-uid-sub:" + sub))
 	return "u-" + hex.EncodeToString(sum[:8])
 }
 

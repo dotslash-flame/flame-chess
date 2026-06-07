@@ -49,6 +49,54 @@ func TestVerifyMalformedFails(t *testing.T) {
 	}
 }
 
+func TestSignVerifyRoundTripWithEmail(t *testing.T) {
+	secret := "topsecret"
+	id := Identity{UserID: "u-123", DisplayName: "Alice", Email: "alice@flame.edu.in"}
+
+	got, err := Verify(Sign(id, secret), secret)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if got != id {
+		t.Errorf("round-trip identity = %+v, want %+v", got, id)
+	}
+}
+
+func TestVerifyOldCookieWithoutEmail(t *testing.T) {
+	secret := "topsecret"
+	id := Identity{UserID: "u-1", DisplayName: "Bob"}
+
+	got, err := Verify(Sign(id, secret), secret)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if got.Email != "" {
+		t.Errorf("expected empty email, got %q", got.Email)
+	}
+	if got != id {
+		t.Errorf("round-trip identity = %+v, want %+v", got, id)
+	}
+}
+
+func TestUserIDForSubStableAndDistinct(t *testing.T) {
+	s1 := UserIDForSub("google-sub-123")
+	s2 := UserIDForSub("google-sub-123")
+	other := UserIDForSub("google-sub-456")
+
+	if s1 == "" {
+		t.Fatal("UserIDForSub returned empty")
+	}
+	if s1 != s2 {
+		t.Errorf("same sub produced different ids: %q vs %q", s1, s2)
+	}
+	if s1 == other {
+		t.Errorf("different subs produced same id: %q", s1)
+	}
+	if UserIDForSub("Alice") == UserIDForName("Alice") {
+		t.Errorf("sub and name namespaces collide for %q", "Alice")
+	}
+}
+
 func TestUserIDForNameStable(t *testing.T) {
 	a1 := UserIDForName("Alice")
 	a2 := UserIDForName("Alice")
