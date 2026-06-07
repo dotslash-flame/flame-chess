@@ -22,6 +22,22 @@ func TestLoadDefaults(t *testing.T) {
 	if c.StartingRating != 800 {
 		t.Errorf("StartingRating = %d, want 800", c.StartingRating)
 	}
+	if !c.DevLogin {
+		t.Error("DevLogin should default to true")
+	}
+}
+
+func TestDevLoginDisabled(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("SESSION_HMAC_SECRET", "secret")
+	t.Setenv("DEV_LOGIN", "false")
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if c.DevLogin {
+		t.Error("DevLogin should be false when DEV_LOGIN=false")
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
