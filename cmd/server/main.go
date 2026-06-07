@@ -28,7 +28,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: httpapi.NewRouter(h, cfg.SessionHMACSecret, cfg.DevLogin),
+		Handler: httpapi.NewRouter(h, cfg),
 	}
 
 	go func() {
