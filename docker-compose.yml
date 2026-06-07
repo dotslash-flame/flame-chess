@@ -23,8 +23,12 @@ services:
     environment:
       PORT: "8080"
       DATABASE_URL: "postgres://flame:flame@db:5432/flamechess?sslmode=disable"
-      SESSION_HMAC_SECRET: "change-me-in-prod"
-      ALLOWED_EMAIL_SUFFIX: "flame.edu.in"
+      SESSION_HMAC_SECRET: "${SESSION_HMAC_SECRET:?set SESSION_HMAC_SECRET in .env}"
+      ALLOWED_EMAIL_SUFFIX: "${ALLOWED_EMAIL_SUFFIX:-flame.edu.in}"
+      DEV_LOGIN: "${DEV_LOGIN:-false}"
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in .env}"
+      GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET in .env}"
+      GOOGLE_REDIRECT_URL: "${GOOGLE_REDIRECT_URL:-http://localhost:8080/auth/google/callback}"
     ports:
       - "8080:8080"
 

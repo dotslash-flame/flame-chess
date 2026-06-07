@@ -40,6 +40,8 @@
   .pill.ok { color:#8fd98f; } .pill.warn { color:#e8c35b; }
   h3 { margin:0 0 4px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
   .me { color:#e87b35; font-weight:600; }
+  .hidden { display:none !important; }
+  .authsep { color:var(--muted); font-size:12px; margin:6px 0; }
 </style>
 </head>
 <body>
@@ -54,13 +56,34 @@
   <!-- LEFT: controls + board -->
   <div class="col">
     <div class="panel">
-      <h3>1 · Auth (dev-login)</h3>
-      <div class="row">
-        <label>name</label>
-        <input id="name" value="Alice" class="short" style="width:120px">
-        <button class="primary" id="loginBtn">Login</button>
-        <span id="authMsg" class="muted"></span>
+      <h3>1 · Auth</h3>
+
+      <!-- logged-out -->
+      <div id="authOut" class="hidden">
+        <div class="row">
+          <button class="primary" id="googleBtn">Login with Google</button>
+        </div>
+        <div id="devBlock">
+          <div class="authsep">— or —</div>
+          <div class="row">
+            <label>name</label>
+            <input id="name" value="Alice" class="short" style="width:120px">
+            <button id="devLoginBtn">Dev login</button>
+            <span class="muted" style="font-size:12px">(dev only)</span>
+          </div>
+          <span id="authMsg" class="muted" style="display:block;margin-top:4px"></span>
+        </div>
       </div>
+
+      <!-- logged-in -->
+      <div id="authIn" class="hidden">
+        <div class="row">
+          <span class="me" id="meName">—</span>
+          <button id="logoutBtn" style="margin-left:auto">Logout</button>
+        </div>
+        <div class="muted" id="meMeta" style="font-size:12px;margin-top:2px"></div>
+      </div>
+
       <div class="muted" style="margin-top:6px;font-size:12px">Tip: run a 2nd player in an incognito window (separate cookie).</div>
     </div>
 
@@ -143,20 +166,88 @@ function escapeHtml(s){ return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>
 $('clearLog').onclick = () => $('log').innerHTML='';
 
 // ---------- auth ----------
-$('loginBtn').onclick = async () => {
-  const name = $('name').value || 'anon';
+function api(path, opts){
+  return fetch(path, Object.assign({credentials:'include'}, opts, {
+    headers: Object.assign({}, (opts&&opts.headers)||{})
+  }));
+}
+
+function setIdentity(obj){
+  me = { uid:obj.uid, name:obj.display_name||obj.name, email:obj.email||'' };
+  $('whoami').innerHTML = `<span class="me">${escapeHtml(me.name)}</span> <span class="muted">${escapeHtml(me.uid)}</span>`;
+  $('meName').textContent = me.name;
+  $('meMeta').textContent = me.email ? (me.email+' · '+me.uid) : me.uid;
+}
+
+function showAuthState(s){
+  const inView = s==='in';
+  $('authIn').classList.toggle('hidden', !inView);
+  $('authOut').classList.toggle('hidden', inView);
+}
+
+async function bootstrapMe(){
   try {
-    const r = await fetch('/auth/dev-login', {
-      method:'POST', credentials:'same-origin',
+    const r = await api('/api/me');
+    if (r.ok){
+      const id = await r.json();
+      setIdentity(id);
+      showAuthState('in');
+      log('sys','session active: '+me.name+' ('+me.uid+')','sys');
+      connectWS();
+      return;
+    }
+  } catch(e){ log('sys','/api/me check failed: '+e,'err'); }
+  showAuthState('out');
+  $('whoami').textContent = 'not logged in';
+}
+
+// Hide the dev-login block when the route is absent (DEV_LOGIN=false).
+// A GET to the POST-only route returns 405 when registered, 404 when not —
+// side-effect free (the POST handler never runs, so no session is minted).
+async function detectDevLogin(){
+  try {
+    const r = await api('/auth/dev-login');
+    $('devBlock').classList.toggle('hidden', r.status === 404);
+  } catch(_){ /* leave visible on network error */ }
+}
+
+$('googleBtn').onclick = () => { location.href = '/auth/google/login'; };
+
+$('devLoginBtn').onclick = async () => {
+  const name = $('name').value || 'anon';
+  $('authMsg').textContent = '';
+  try {
+    const r = await api('/auth/dev-login', {
+      method:'POST',
       headers:{'Content-Type':'application/x-www-form-urlencoded'},
       body:'name='+encodeURIComponent(name)
     });
-    me = await r.json();
-    $('whoami').innerHTML = `<span class="me">${escapeHtml(me.name)}</span> <span class="muted">${me.uid}</span>`;
-    $('authMsg').textContent = 'cookie set';
-    log('sys', 'logged in as '+me.name+' ('+me.uid+')', 'sys');
+    if (!r.ok){
+      $('authMsg').textContent = 'dev-login disabled — use Google';
+      log('sys','dev-login unavailable (HTTP '+r.status+')','err');
+      return;
+    }
+    setIdentity(await r.json());
+    showAuthState('in');
+    log('sys','logged in as '+me.name+' ('+me.uid+')','sys');
     connectWS();
   } catch(e){ $('authMsg').textContent = 'login failed'; log('sys','login failed: '+e,'err'); }
+};
+
+$('logoutBtn').onclick = async () => {
+  try { await api('/auth/logout', {method:'POST'}); }
+  catch(e){ log('sys','logout request failed: '+e,'err'); }
+  if (ws){ try{ws.close();}catch(_){} ws=null; }
+  state = { gameId:null, color:null, fen:null, turn:null, whiteMs:null, blackMs:null, opp:null, over:false };
+  sel=null; stopClock();
+  enable(['joinBtn','leaveBtn'],false); enableGame(false);
+  $('gameId').textContent='—'; $('myColor').textContent='—'; $('oppName').textContent='—';
+  $('result').innerHTML=''; $('queueMsg').textContent=''; $('turn').textContent='—';
+  paintClocks(); render();
+  me=null;
+  showAuthState('out');
+  $('whoami').textContent='not logged in';
+  log('sys','logged out','sys');
 };
 
 // ---------- websocket ----------
@@ -310,6 +401,8 @@ function enable(ids,on){ ids.forEach(id=>$(id).disabled=!on); }
 function enableGame(on){ enable(['resignBtn','drawBtn','uciBtn'],on); if(!on) hideDraw(); }
 
 render(); // initial empty board
+detectDevLogin();
+bootstrapMe();
 </script>
 </body>
 </html>
