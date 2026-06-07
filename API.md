@@ -5,51 +5,74 @@ INSERT GARBAGE BELOW
 
 # FlameChess — API Contract
 
-**Status:** Phase 3 (first playable). In-memory only; no persistence/ratings yet.
-**Source of truth:** generated from `internal/wire/wire.go` + `internal/httpapi/router.go` + `internal/ws/ws.go`.
+**Status:** Phase 4 (auth). Still in-memory; no persistence/ratings yet.
+**Source of truth:** generated from `internal/wire/wire.go` + `internal/httpapi/router.go` + `internal/httpapi/auth.go` + `internal/ws/ws.go`.
 
-This is the contract a frontend / test client builds against. Sections marked **[Phase 3 — live]** are implemented and stable now. Sections marked **[deferred]** are from the design spec (§6) but **not** served yet — do not build against them.
+This is the contract a frontend / test client builds against. Sections marked **[live]** are implemented and stable now. Sections marked **[deferred]** are from the design spec (§6) but **not** served yet — do not build against them.
 
 ---
 
 ## Auth & sessions
 
-Identity is carried by an HMAC-signed cookie named **`fc_session`** (`HttpOnly`, `Path=/`). The `/ws` upgrade reads it; there is no bearer-token / header auth.
+Identity is carried by an HMAC-signed cookie named **`fc_session`** (`HttpOnly`, `Path=/`, `SameSite=Lax`, `Secure` in production). The `/ws` upgrade and `GET /api/me` read it; there is no bearer-token / header auth.
 
 The signed payload (after verify) is an `Identity`:
 
 ```json
-{ "uid": "u-1a2b3c4d5e6f7a8b", "name": "Alice" }
+{ "uid": "u-1a2b3c4d5e6f7a8b", "email": "alice@flame.edu.in", "name": "Alice" }
 ```
 
-- `uid` — stable per display name (`UserIDForName`): same name → same id.
+- `uid` — stable per identity. From Google login it derives from the Google `sub` (`UserIDForSub`); from dev-login it derives from the display name (`UserIDForName`).
+- `email` — present for Google logins; omitted for dev-login cookies.
 - `name` — display name.
 
-### `POST /auth/dev-login` **[Phase 3 — live, dev only]**
+### Google OAuth **[live]**
 
-Mints a session cookie for a display name. Gated by `DEV_LOGIN` (default `true`; Phase 4 turns it off and replaces it with Google OAuth behind the **same** cookie).
+Production login. Gated to verified Flame University accounts: the email must be verified **and** end with `@<ALLOWED_EMAIL_SUFFIX>` (default `flame.edu.in`). These routes are registered only when `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REDIRECT_URL` are configured.
+
+- **`GET /auth/google/login`** — sets a short-lived `fc_oauth_state` cookie and `302`-redirects to Google's consent screen.
+- **`GET /auth/google/callback`** — Google redirects here with `code` + `state`. The server validates `state` against the cookie (mismatch/missing → `400`), exchanges the code, and applies the suffix gate:
+  - **allowed** → sets the `fc_session` cookie and `302`-redirects to `APP_REDIRECT_URL` (default `/`).
+  - **rejected** (unverified or non-Flame email) → `403` with a minimal "Flame accounts only" HTML page.
+
+### `POST /auth/logout` **[live]**
+
+Clears the `fc_session` cookie (expired `Set-Cookie`). Returns `204`. Afterwards `GET /api/me` is `401` and the `/ws` upgrade is `401`.
+
+### `POST /auth/dev-login` **[live, dev only]**
+
+Mints a session cookie for a display name **without Google**. Gated by `DEV_LOGIN` (default `true`); production runs `DEV_LOGIN=false`, which removes this route (`404`) and requires the Google flow. This is the path the local frontend uses while developing.
 
 - **Body:** form-encoded, field `name` (defaults to `anon` if omitted).
 - **Response:** sets the `fc_session` cookie and returns the `Identity` JSON above.
 
 ```bash
 curl -i -X POST -d 'name=Alice' http://localhost:8080/auth/dev-login
-# Set-Cookie: fc_session=<payload>.<hmac>; Path=/; HttpOnly
+# Set-Cookie: fc_session=<payload>.<hmac>; Path=/; HttpOnly; SameSite=Lax
 ```
 
 Browser flow: `POST /auth/dev-login` (same origin so the cookie sticks) → open the WebSocket; the cookie rides along automatically.
-
-> **[deferred]** `GET /auth/google/login`, `GET /auth/google/callback`, `POST /auth/logout` — Phase 4.
 
 ---
 
 ## REST
 
-### `GET /healthz` **[Phase 3 — live]**
+### `GET /healthz` **[live]**
 
 Liveness. `200` with `{ "status": "ok" }`.
 
-> **[deferred]** `GET /api/me`, `PATCH /api/me`, `GET /api/leaderboard`, `GET /api/games`, `GET /api/games/{id}`, `POST /api/challenges` — Phases 4–6.
+### `GET /api/me` **[live]**
+
+Returns the identity carried by the `fc_session` cookie. No body required.
+
+- **`200`** with JSON `{ "uid": "...", "email": "...", "display_name": "..." }` (`email` is empty for dev-login sessions).
+- **`401`** if the cookie is missing or fails verification.
+
+```bash
+curl -i --cookie 'fc_session=<payload>.<hmac>' http://localhost:8080/api/me
+```
+
+> **[deferred]** `PATCH /api/me` (durable display-name change — Phase 5), `GET /api/leaderboard`, `GET /api/games`, `GET /api/games/{id}`, `POST /api/challenges` — Phases 5–6.
 
 ---
 
@@ -141,9 +164,20 @@ Example:
 
 ---
 
-## Not in Phase 3 (don't build against these yet)
+## Not yet live (don't build against these yet)
 
 - `rating_delta` on `game.over` (Phase 5).
+- `PATCH /api/me` durable display-name change, ratings on `/api/me` (Phase 5).
 - Challenge-by-link / direct challenge: `challenge.accept`, `challenge.create_direct`, `challenge.incoming` (Phase 6).
 - `rematch.offer` / `rematch.respond` / `rematch.offered`, in-game `chat`, spectating, reconnect-resume (Phase 7).
-- Any `/api/*` REST endpoints and Google OAuth (Phases 4–6).
+- `GET /api/leaderboard`, `GET /api/games`, `GET /api/games/{id}` (Phases 5–6).
+
+---
+
+## Frontend handoff notes
+
+- **Local dev login:** the frontend authenticates via `POST /auth/dev-login?name=X` (no Google needed) while `DEV_LOGIN=true`. **Production** uses the Google flow (`GET /auth/google/login`); dev-login is `404` there.
+- **Cross-origin (CORS):** set `CORS_ALLOWED_ORIGINS` to a comma-separated allowlist of frontend origins (e.g. `https://app.flame.edu.in,http://localhost:5173`). When set, the server returns credentialed CORS headers (`Access-Control-Allow-Origin` echoed per-request, `Access-Control-Allow-Credentials: true`, preflight `OPTIONS` → `204`) and switches auth cookies to **`SameSite=None; Secure`** so the browser sends them on cross-site requests. From the frontend, **all** REST/auth calls must use `credentials: "include"` (e.g. `fetch(url, { credentials: "include" })`).
+- **HTTPS required for cross-origin:** `SameSite=None` cookies must be `Secure`, so a cross-origin frontend must talk to the server over **HTTPS** (browsers reject `SameSite=None` non-Secure cookies). For plain `http://localhost` development, prefer same-origin or serve over TLS.
+- **Same origin (no CORS):** if `CORS_ALLOWED_ORIGINS` is empty, no CORS headers are sent and cookies stay `SameSite=Lax` — serve the frontend from the **same origin** as the Go server. (The `/ws` upgrade does not check Origin, so the socket itself works cross-port regardless — but `GET /api/me` and the auth cookie follow the policy above.)
+- **Who am I:** call `GET /api/me` on load; `401` means "not logged in" → send the user to dev-login (local) or `GET /auth/google/login` (prod).
