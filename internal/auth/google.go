@@ -25,6 +25,7 @@ type GoogleUser struct {
 	Sub           string
 	Email         string
 	Name          string
+	Picture       string
 	EmailVerified bool
 }
 
@@ -77,6 +78,7 @@ func parseUserInfo(body []byte) (GoogleUser, error) {
 		Sub           string          `json:"sub"`
 		Email         string          `json:"email"`
 		Name          string          `json:"name"`
+		Picture       string          `json:"picture"`
 		EmailVerified json.RawMessage `json:"email_verified"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -86,6 +88,7 @@ func parseUserInfo(body []byte) (GoogleUser, error) {
 		Sub:           raw.Sub,
 		Email:         raw.Email,
 		Name:          raw.Name,
+		Picture:       raw.Picture,
 		EmailVerified: parseFlexibleBool(raw.EmailVerified),
 	}, nil
 }

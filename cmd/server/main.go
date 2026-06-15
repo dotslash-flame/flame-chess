@@ -12,6 +12,7 @@ import (
 	"github.com/dotslash-flame/flame-chess/internal/config"
 	"github.com/dotslash-flame/flame-chess/internal/httpapi"
 	"github.com/dotslash-flame/flame-chess/internal/hub"
+	"github.com/dotslash-flame/flame-chess/internal/store"
 )
 
 func main() {
@@ -23,12 +24,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	h := hub.New(hub.Options{})
+	st, err := store.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("store: %v", err)
+	}
+	defer st.Close()
+
+	h := hub.New(hub.Options{Store: st})
 	go h.Run(ctx.Done())
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: httpapi.NewRouter(h, cfg),
+		Handler: httpapi.NewRouter(h, cfg, st),
 	}
 
 	go func() {

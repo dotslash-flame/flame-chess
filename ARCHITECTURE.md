@@ -17,8 +17,9 @@ Components
 - internal/game — per-game actor: board, clocks, move validation.
 - internal/hub — matchmaking pools, presence, challenges.
 - internal/ws — websocket layer.
-- internal/store — (later) Postgres access (pgx + sqlc).
-- internal/rating — (later) per-category Elo.
+- internal/store — Postgres access (pgx + sqlc).
+- internal/rating — per-category Elo.
+- internal/recorder — per-game seam that records finished games and applies Elo on game end.
 - internal/anticheat — (later, standalone) post-game analysis.
 - migrations/ — goose SQL migrations.
 
@@ -27,7 +28,7 @@ Status
 - [x] Phase 2: Chess core (game package).
 - [x] Phase 3: WS + Hub + quick-match (first playable).
 - [x] Phase 4: Auth (Google OAuth + suffix gate).
-- [ ] Phase 5: Persistence & ratings.
+- [x] Phase 5: Persistence & ratings.
 - [ ] Phase 6: Challenges.
 - [ ] Phase 7: Extras (chat, rematch, spectating).
 - [ ] Phase 8: Test client.
