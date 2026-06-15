@@ -2,12 +2,16 @@ package hub
 
 //matchmakng engine
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	mrand "math/rand/v2"
 	"time"
 
 	"github.com/dotslash-flame/flame-chess/internal/game"
+	"github.com/dotslash-flame/flame-chess/internal/recorder"
+	"github.com/dotslash-flame/flame-chess/internal/store"
 	"github.com/dotslash-flame/flame-chess/internal/wire"
 )
 
@@ -29,6 +33,7 @@ type Options struct {
 	Rng    func(n int) int  // picks colors
 	NextID func() string    // game id generator
 	Now    func() time.Time // clock start time
+	Store  *store.Store     // persistence; nil → games are not recorded/rated
 }
 
 type Hub struct {
@@ -44,6 +49,7 @@ type Hub struct {
 	nextID func() string
 	now    func() time.Time
 	run    func(*game.Actor)
+	store  *store.Store
 }
 
 func New(opts Options) *Hub {
@@ -58,6 +64,7 @@ func New(opts Options) *Hub {
 		nextID:      opts.NextID,
 		now:         opts.Now,
 		run:         func(a *game.Actor) { go a.Run() },
+		store:       opts.Store,
 	}
 	if h.rng == nil {
 		h.rng = func(n int) int { return mrand.IntN(n) }
@@ -198,7 +205,18 @@ func (h *Hub) startGame(key poolKey, head, joiner wire.Conn) {
 	}
 	gid := h.nextID()
 	g := game.NewGame(key.base, key.increment, h.now())
-	actor := game.NewActor(gid, g, white, black, func(id string) { h.enqueue(gameEndedCmd{gameID: id}) })
+
+	var rec game.Recorder
+	if h.store != nil {
+		dbID, err := h.store.InsertActiveGame(context.Background(), white.UserID(), black.UserID(), string(g.Category()), key.base, key.increment)
+		if err != nil {
+			log.Printf("hub: insert active game: %v", err)
+		} else {
+			rec = recorder.New(h.store, dbID, white.UserID(), black.UserID())
+		}
+	}
+
+	actor := game.NewActor(gid, g, white, black, func(id string) { h.enqueue(gameEndedCmd{gameID: id}) }, rec)
 
 	h.games[gid] = actor
 	h.userGame[white.UserID()] = gid

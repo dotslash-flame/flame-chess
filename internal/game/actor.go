@@ -21,15 +21,28 @@ type Actor struct {
 	now   func() time.Time
 	timer *time.Timer
 	onEnd func(gameID string)
+	rec   Recorder
 
 	hasOffer  bool
 	offeredBy chess.Color
 	finished  bool
 }
 
+type EndInfo struct {
+	Result   string
+	Reason   string
+	PGN      string
+	Category Category
+	Rated    bool
+}
+
+type Recorder interface {
+	Record(EndInfo) *wire.GameRatings
+}
+
 // this func wires a game to its two player conns. white/black are the
 // connection handles for those colors
-func NewActor(id string, g *Game, white, black wire.Conn, onEnd func(gameID string)) *Actor {
+func NewActor(id string, g *Game, white, black wire.Conn, onEnd func(gameID string), rec Recorder) *Actor {
 	return &Actor{
 		id:    id,
 		game:  g,
@@ -38,6 +51,7 @@ func NewActor(id string, g *Game, white, black wire.Conn, onEnd func(gameID stri
 		cmds:  make(chan command, 16),
 		now:   time.Now,
 		onEnd: onEnd,
+		rec:   rec,
 	}
 }
 
@@ -218,11 +232,22 @@ func (a *Actor) finish() {
 		return
 	}
 	a.finished = true
+	var ratings *wire.GameRatings
+	if a.rec != nil {
+		ratings = a.rec.Record(EndInfo{
+			Result:   a.game.Result(),
+			Reason:   a.game.Reason(),
+			PGN:      a.game.PGN(),
+			Category: a.game.Category(),
+			Rated:    a.game.Rated(),
+		})
+	}
 	a.broadcast(wire.GameOver{
-		Type:   wire.TypeGameOver,
-		GameID: a.id,
-		Result: a.game.Result(),
-		Reason: a.game.Reason(),
+		Type:    wire.TypeGameOver,
+		GameID:  a.id,
+		Result:  a.game.Result(),
+		Reason:  a.game.Reason(),
+		Ratings: ratings,
 	})
 	if a.timer != nil {
 		a.timer.Stop()

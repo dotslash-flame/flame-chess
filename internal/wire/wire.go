@@ -122,10 +122,22 @@ type GameState struct {
 }
 
 type GameOver struct {
-	Type   string `json:"type"`
-	GameID string `json:"game_id"`
-	Result string `json:"result"`
-	Reason string `json:"reason"`
+	Type    string       `json:"type"`
+	GameID  string       `json:"game_id"`
+	Result  string       `json:"result"`
+	Reason  string       `json:"reason"`
+	Ratings *GameRatings `json:"ratings,omitempty"`
+}
+
+type GameRatings struct {
+	White RatingChange `json:"white"`
+	Black RatingChange `json:"black"`
+}
+
+type RatingChange struct {
+	Before int `json:"before"`
+	After  int `json:"after"`
+	Delta  int `json:"delta"`
 }
 
 type DrawOffered struct {
