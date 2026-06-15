@@ -5,7 +5,7 @@ INSERT GARBAGE BELOW
 
 # FlameChess — API Contract
 
-**Status:** Phase 4 (auth). Still in-memory; no persistence/ratings yet.
+**Status:** Phase 5 (persistence & ratings). Finished games are persisted, per-category Elo ratings are maintained, and a leaderboard + game history are served.
 **Source of truth:** generated from `internal/wire/wire.go` + `internal/httpapi/router.go` + `internal/httpapi/auth.go` + `internal/ws/ws.go`.
 
 This is the contract a frontend / test client builds against. Sections marked **[live]** are implemented and stable now. Sections marked **[deferred]** are from the design spec (§6) but **not** served yet — do not build against them.
@@ -22,9 +22,9 @@ The signed payload (after verify) is an `Identity`:
 { "uid": "u-1a2b3c4d5e6f7a8b", "email": "alice@flame.edu.in", "name": "Alice" }
 ```
 
-- `uid` — stable per identity. From Google login it derives from the Google `sub` (`UserIDForSub`); from dev-login it derives from the display name (`UserIDForName`).
-- `email` — present for Google logins; omitted for dev-login cookies.
-- `name` — display name.
+- `uid` — the user's `users.id` **UUID**. As of Phase 5 the server upserts a `users` row at login (Google **and** dev-login) and puts that UUID in the cookie, so the cookie uid *is* the persistent user id. ⚠️ **Re-login required after the Phase 5 deploy:** old `u-…` cookies no longer resolve to a user and yield `401` on `GET /api/me`.
+- `email` — present for Google logins; for dev-login it is the synthetic `<name>@dev.local` (dev accounts are persisted and rated like any other).
+- `name` — display name (sourced from the DB, so a `PATCH /api/me` rename is reflected here after the cookie is re-signed).
 
 ### Google OAuth **[live]**
 
@@ -63,16 +63,70 @@ Liveness. `200` with `{ "status": "ok" }`.
 
 ### `GET /api/me` **[live]**
 
-Returns the identity carried by the `fc_session` cookie. No body required.
+Returns the caller's profile + live ratings. `display_name`/`email` are read from the DB (not the cookie), so a rename is reflected immediately. No body required.
 
-- **`200`** with JSON `{ "uid": "...", "email": "...", "display_name": "..." }` (`email` is empty for dev-login sessions).
-- **`401`** if the cookie is missing or fails verification.
+- **`200`** with JSON:
+  ```json
+  {
+    "uid": "1f2e...-uuid",
+    "email": "alice@flame.edu.in",
+    "display_name": "Alice",
+    "ratings": {
+      "bullet": { "rating": 800, "games_played": 0 },
+      "blitz":  { "rating": 812, "games_played": 3 },
+      "rapid":  { "rating": 800, "games_played": 0 }
+    }
+  }
+  ```
+- **`401`** if the cookie is missing, fails verification, **or** the uid no longer resolves to a user (stale pre-Phase-5 cookie → re-login).
 
 ```bash
 curl -i --cookie 'fc_session=<payload>.<hmac>' http://localhost:8080/api/me
 ```
 
-> **[deferred]** `PATCH /api/me` (durable display-name change — Phase 5), `GET /api/leaderboard`, `GET /api/games`, `GET /api/games/{id}`, `POST /api/challenges` — Phases 5–6.
+### `PATCH /api/me` **[live]**
+
+Durably change the display name. Cookie-authenticated.
+
+- **Body:** JSON `{ "display_name": "NewName" }`. Validated: trimmed length 1–30, characters limited to letters, digits, space, `_`, `-`, `.`.
+- **`200`** → name updated; the server **re-signs the `fc_session` cookie** (so the WebSocket layer sees the new name without a re-login) and returns the same body as `GET /api/me`.
+- **`400`** invalid/empty name. **`409`** the name is already taken (unique constraint). **`401`** no/invalid cookie.
+
+```bash
+curl -i -X PATCH --cookie 'fc_session=<payload>.<hmac>' \
+  -H 'Content-Type: application/json' -d '{"display_name":"Alice2"}' \
+  http://localhost:8080/api/me
+```
+
+### `GET /api/leaderboard?category=blitz&limit=50` **[live]**
+
+Top players for a category, by rating descending. Cookie-authenticated.
+
+- **Query:** `category` ∈ {`bullet`,`blitz`,`rapid`} (default `blitz`; unknown values fall back to `blitz`); `limit` default `50`, max `200`.
+- **`200`** with JSON array `[{ "rank": 1, "display_name": "...", "rating": 1100, "games_played": 8 }, ...]`. **`401`** if unauthenticated.
+
+### `GET /api/games?limit=50` **[live]**
+
+The caller's own finished-game history, newest first. Cookie-authenticated.
+
+- **Query:** `limit` default `50`, max `200`.
+- **`200`** with JSON array of:
+  ```json
+  {
+    "id": "game-uuid",
+    "opponent": "Bob",
+    "color": "white",
+    "result": "1-0",
+    "reason": "checkmate",
+    "category": "blitz",
+    "rating_before": 800,
+    "rating_after": 816,
+    "ended_at": "2026-06-15T12:00:00Z"
+  }
+  ```
+- **`401`** if unauthenticated.
+
+> **[deferred]** `GET /api/games/{id}` (single-game detail), `POST /api/challenges` — Phase 6.
 
 ---
 
@@ -118,13 +172,24 @@ Example:
 | `queue.waiting` | — | You joined a pool with no waiting opponent; you're parked. |
 | `game.start` | `game_id`, `color` (`"white"`/`"black"`), `opponent` (display name), `clocks` (`{white_ms,black_ms}`), `fen` | A match was made. Colors are random; both players receive opposite colors and the same `game_id`. |
 | `game.state` | `game_id`, `fen`, `last_move` (UCI), `white_ms`, `black_ms`, `turn` (`"white"`/`"black"`) | After every accepted move. Authoritative board + clocks. |
-| `game.over` | `game_id`, `result` (`"1-0"`/`"0-1"`/`"1/2-1/2"`), `reason` | Terminal transition. **No `rating_delta` in Phase 3** (added in Phase 5). |
+| `game.over` | `game_id`, `result` (`"1-0"`/`"0-1"`/`"1/2-1/2"`), `reason`, `ratings` (optional) | Terminal transition. For **rated** games `ratings` carries per-color before/after/delta (see below); it is **omitted** for aborted / 0-move games. |
 | `draw.offered` | `game_id`, `from` (offerer's `uid`) | Opponent offered a draw. |
 | `pong` | — | Reply to `ping`. |
 | `error` | `code`, `msg` | A request was rejected; game state is untouched. |
 
 `game.over.reason` is one of:
 `checkmate`, `stalemate`, `insufficient`, `threefold`, `fifty_move`, `resign`, `draw_agreed`, `timeout`.
+
+The optional `ratings` block (rated games only) carries the Elo change for both colors; each client reads its own color (known from `game.start`):
+
+```json
+{ "ratings": {
+    "white": { "before": 800, "after": 816, "delta": 16 },
+    "black": { "before": 800, "after": 784, "delta": -16 }
+} }
+```
+
+Ratings use standard Elo per category (start 800; `K=40` for the first 30 games, `K=20` after). Aborted / 0-move games do not change ratings and omit the block entirely.
 
 Example:
 
@@ -137,7 +202,9 @@ Example:
   "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
   "last_move": "e2e4", "white_ms": 298731, "black_ms": 300000, "turn": "black" }
 
-{ "type": "game.over", "game_id": "g1", "result": "0-1", "reason": "checkmate" }
+{ "type": "game.over", "game_id": "g1", "result": "0-1", "reason": "checkmate",
+  "ratings": { "white": { "before": 800, "after": 784, "delta": -16 },
+               "black": { "before": 800, "after": 816, "delta": 16 } } }
 ```
 
 ---
@@ -166,11 +233,9 @@ Example:
 
 ## Not yet live (don't build against these yet)
 
-- `rating_delta` on `game.over` (Phase 5).
-- `PATCH /api/me` durable display-name change, ratings on `/api/me` (Phase 5).
 - Challenge-by-link / direct challenge: `challenge.accept`, `challenge.create_direct`, `challenge.incoming` (Phase 6).
 - `rematch.offer` / `rematch.respond` / `rematch.offered`, in-game `chat`, spectating, reconnect-resume (Phase 7).
-- `GET /api/leaderboard`, `GET /api/games`, `GET /api/games/{id}` (Phases 5–6).
+- `GET /api/games/{id}` single-game detail (Phase 6).
 
 ---
 

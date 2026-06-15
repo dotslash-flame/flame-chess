@@ -55,7 +55,7 @@ func newTestActor(base, inc int) (*Actor, *fakeConn, *fakeConn, *testClock, *[]s
 	clk := &testClock{t: time.Unix(0, 0)}
 	g := NewGame(base, inc, clk.t)
 	ended := &[]string{}
-	a := NewActor("g1", g, w, b, func(id string) { *ended = append(*ended, id) })
+	a := NewActor("g1", g, w, b, func(id string) { *ended = append(*ended, id) }, nil)
 	a.now = clk.now
 	return a, w, b, clk, ended
 }

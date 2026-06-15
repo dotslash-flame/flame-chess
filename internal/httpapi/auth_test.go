@@ -11,29 +11,55 @@ import (
 	"github.com/dotslash-flame/flame-chess/internal/ws"
 )
 
-func TestMeReturnsIdentityForValidCookie(t *testing.T) {
-	id := auth.Identity{UserID: "u-1", DisplayName: "Alice", Email: "alice@flame.edu.in"}
+type meResponse struct {
+	UID         string                                       `json:"uid"`
+	Email       string                                       `json:"email"`
+	DisplayName string                                       `json:"display_name"`
+	Ratings     map[string]struct{ Rating, GamesPlayed int } `json:"ratings"`
+}
+
+func signedFor(id string) string {
+	return auth.Sign(auth.Identity{UserID: id}, testSecret)
+}
+
+func TestMeReturnsIdentityAndRatingsForValidCookie(t *testing.T) {
+	st := newFakeStore()
+	st.seedUser("u-1", "Alice", "alice@flame.edu.in")
+
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
-	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: auth.Sign(id, testSecret)})
+	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
 	rec := httptest.NewRecorder()
 
-	meHandler(testSecret)(rec, req)
+	meHandler(st, testSecret)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	var body map[string]string
+	var body meResponse
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body["uid"] != "u-1" || body["email"] != "alice@flame.edu.in" || body["display_name"] != "Alice" {
+	if body.UID != "u-1" || body.Email != "alice@flame.edu.in" || body.DisplayName != "Alice" {
 		t.Errorf("unexpected body: %+v", body)
+	}
+	if body.Ratings["blitz"].Rating != 800 {
+		t.Errorf("blitz rating = %d, want 800", body.Ratings["blitz"].Rating)
+	}
+}
+
+func TestMeRejectsUnknownUser(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-stale")})
+	rec := httptest.NewRecorder()
+	meHandler(newFakeStore(), testSecret)(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
 	}
 }
 
 func TestMeRejectsMissingCookie(t *testing.T) {
 	rec := httptest.NewRecorder()
-	meHandler(testSecret)(rec, httptest.NewRequest(http.MethodGet, "/api/me", nil))
+	meHandler(newFakeStore(), testSecret)(rec, httptest.NewRequest(http.MethodGet, "/api/me", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
 	}
@@ -43,9 +69,75 @@ func TestMeRejectsGarbageCookie(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: "garbage.deadbeef"})
 	rec := httptest.NewRecorder()
-	meHandler(testSecret)(rec, req)
+	meHandler(newFakeStore(), testSecret)(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestPatchMeUpdatesNameAndReSignsCookie(t *testing.T) {
+	st := newFakeStore()
+	st.seedUser("u-1", "Alice", "alice@flame.edu.in")
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/me", strings.NewReader(`{"display_name":"Alice2"}`))
+	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
+	rec := httptest.NewRecorder()
+
+	patchMeHandler(st, testSecret, cookiePolicy{})(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body meResponse
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.DisplayName != "Alice2" {
+		t.Errorf("display_name = %q, want Alice2", body.DisplayName)
+	}
+	var ck *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == ws.SessionCookie {
+			ck = c
+		}
+	}
+	if ck == nil {
+		t.Fatal("no re-signed session cookie")
+	}
+	id, err := auth.Verify(ck.Value, testSecret)
+	if err != nil || id.DisplayName != "Alice2" {
+		t.Errorf("re-signed cookie name = %q (err %v), want Alice2", id.DisplayName, err)
+	}
+}
+
+func TestPatchMeRejectsTakenName(t *testing.T) {
+	st := newFakeStore()
+	st.seedUser("u-1", "Alice", "alice@flame.edu.in")
+	st.seedUser("u-2", "Bob", "bob@flame.edu.in")
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/me", strings.NewReader(`{"display_name":"Bob"}`))
+	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
+	rec := httptest.NewRecorder()
+
+	patchMeHandler(st, testSecret, cookiePolicy{})(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want 409", rec.Code)
+	}
+}
+
+func TestPatchMeRejectsInvalidName(t *testing.T) {
+	st := newFakeStore()
+	st.seedUser("u-1", "Alice", "alice@flame.edu.in")
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/me", strings.NewReader(`{"display_name":"   "}`))
+	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
+	rec := httptest.NewRecorder()
+
+	patchMeHandler(st, testSecret, cookiePolicy{})(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
 	}
 }
 
@@ -73,7 +165,7 @@ func TestLogoutClearsCookie(t *testing.T) {
 func TestGoogleCallbackRejectsMissingState(t *testing.T) {
 	oauth := auth.NewGoogleOAuth("cid", "secret", "http://localhost/cb", "flame.edu.in")
 	rec := httptest.NewRecorder()
-	googleCallbackHandler(oauth, testSecret, "/", cookiePolicy{})(rec, httptest.NewRequest(http.MethodGet, "/auth/google/callback", nil))
+	googleCallbackHandler(oauth, newFakeStore(), testSecret, "/", cookiePolicy{})(rec, httptest.NewRequest(http.MethodGet, "/auth/google/callback", nil))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
@@ -84,7 +176,7 @@ func TestGoogleCallbackRejectsMismatchedState(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/auth/google/callback?state=abc&code=xyz", nil)
 	req.AddCookie(&http.Cookie{Name: oauthStateCookie, Value: "different"})
 	rec := httptest.NewRecorder()
-	googleCallbackHandler(oauth, testSecret, "/", cookiePolicy{})(rec, req)
+	googleCallbackHandler(oauth, newFakeStore(), testSecret, "/", cookiePolicy{})(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}

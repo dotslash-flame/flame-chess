@@ -20,7 +20,7 @@ func testRouter() http.Handler {
 		AllowedEmailSuffix: "flame.edu.in",
 		PostLoginRedirect:  "/",
 		DevLogin:           true,
-	})
+	}, newFakeStore())
 }
 
 func TestHealthz(t *testing.T) {

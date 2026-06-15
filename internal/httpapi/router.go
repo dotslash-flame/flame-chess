@@ -11,7 +11,7 @@ import (
 	"github.com/dotslash-flame/flame-chess/web"
 )
 
-func NewRouter(h *hub.Hub, cfg *config.Config) http.Handler {
+func NewRouter(h *hub.Hub, cfg *config.Config, st Store) http.Handler {
 	secret := cfg.SessionHMACSecret
 	crossOrigin := len(cfg.CORSAllowedOrigins) > 0
 	cp := cookiePolicy{secure: crossOrigin || !cfg.DevLogin, sameSite: http.SameSiteLaxMode}
@@ -27,17 +27,20 @@ func NewRouter(h *hub.Hub, cfg *config.Config) http.Handler {
 	mux.HandleFunc("GET /healthz", healthz)
 
 	if cfg.DevLogin {
-		mux.HandleFunc("POST /auth/dev-login", devLoginHandler(secret, cp))
+		mux.HandleFunc("POST /auth/dev-login", devLoginHandler(st, secret, cp))
 	}
 
 	if cfg.GoogleClientID != "" && cfg.GoogleClientSecret != "" && cfg.GoogleRedirectURL != "" {
 		oauth := auth.NewGoogleOAuth(cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURL, cfg.AllowedEmailSuffix)
 		mux.HandleFunc("GET /auth/google/login", googleLoginHandler(oauth, cp))
-		mux.HandleFunc("GET /auth/google/callback", googleCallbackHandler(oauth, secret, cfg.PostLoginRedirect, cp))
+		mux.HandleFunc("GET /auth/google/callback", googleCallbackHandler(oauth, st, secret, cfg.PostLoginRedirect, cp))
 	}
 
 	mux.HandleFunc("POST /auth/logout", logoutHandler(cp))
-	mux.HandleFunc("GET /api/me", meHandler(secret))
+	mux.HandleFunc("GET /api/me", meHandler(st, secret))
+	mux.HandleFunc("PATCH /api/me", patchMeHandler(st, secret, cp))
+	mux.HandleFunc("GET /api/leaderboard", leaderboardHandler(st, secret))
+	mux.HandleFunc("GET /api/games", gamesHandler(st, secret))
 	mux.Handle("GET /ws", ws.Handler(h, secret))
 	return corsMiddleware(cfg.CORSAllowedOrigins, mux)
 }
@@ -48,15 +51,19 @@ func healthz(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-func devLoginHandler(secret string, cp cookiePolicy) http.HandlerFunc {
+func devLoginHandler(st Store, secret string, cp cookiePolicy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.FormValue("name")
 		if name == "" {
 			name = "anon"
 		}
-		id := auth.Identity{UserID: auth.UserIDForName(name), DisplayName: name}
+		user, err := persistLogin(r, st, "dev:"+name, name+"@dev.local", name, "")
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		id := auth.Identity{UserID: user.ID, DisplayName: user.DisplayName, Email: user.Email}
 		setSessionCookie(w, auth.Sign(id, secret), cp)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(id)
+		writeJSON(w, http.StatusOK, id)
 	}
 }

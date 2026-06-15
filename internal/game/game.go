@@ -175,6 +175,13 @@ func (g *Game) Result() string     { return g.result }
 func (g *Game) Reason() string     { return g.reason }
 func (g *Game) Category() Category { return g.category }
 
+func (g *Game) Rated() bool {
+	if g.status == StatusAborted {
+		return false
+	}
+	return len(g.chess.Moves()) > 0
+}
+
 func (g *Game) RemainingMillis(color chess.Color, now time.Time) int64 {
 	return g.clock.RemainingAt(clockIndex(color), now).Milliseconds()
 }
