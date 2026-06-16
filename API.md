@@ -126,7 +126,23 @@ The caller's own finished-game history, newest first. Cookie-authenticated.
   ```
 - **`401`** if unauthenticated.
 
-> **[deferred]** `GET /api/games/{id}` (single-game detail), `POST /api/challenges` — Phase 6.
+> **[deferred]** `GET /api/games/{id}` (single-game detail) — Phase 6+.
+
+---
+
+## `POST /api/challenges` **[Phase 6 — live]**
+
+Create a **shareable challenge link**. Cookie-authenticated. The returned `url` embeds a single-use token (`?c=<token>`); the first authenticated visitor to open it is paired with the creator into a game (see `challenge.accept` below).
+
+- **Body:** `{ "base": <int seconds>, "increment": <int seconds> }`
+- **`200`:**
+  ```json
+  { "token": "abc123", "url": "https://host/?c=abc123" }
+  ```
+  `url` scheme follows `X-Forwarded-Proto` (else the request's TLS state); host follows the request `Host`.
+- **`401`** if unauthenticated.
+
+Direct (player-to-player) challenges do **not** use this endpoint — they go over the WebSocket via `challenge.create_direct`.
 
 ---
 
@@ -153,6 +169,10 @@ The server only ever emits authoritative state (real FEN + real clock ms). The c
 | `draw.offer` | `game_id` (string) | Offer a draw to the opponent. |
 | `draw.respond` | `game_id` (string), `accept` (bool) | Respond to a pending offer. `accept:true` ends the game `1/2-1/2`; `false` clears the offer and play continues. |
 | `ping` | — | Liveness; server replies `pong`. |
+| `challenge.create_direct` | `opponent_id` (string uid), `base` (int), `increment` (int) | **[Phase 6]** Directly challenge a specific online user. Server validates and, on success, sends them `challenge.incoming` and acks you with `challenge.created`. |
+| `challenge.accept` | `token` (string) | **[Phase 6]** Accept a challenge (direct or link). On success a `game.start` arrives for both players. Token is single-use. |
+| `challenge.decline` | `token` (string) | **[Phase 6]** Decline a direct challenge you received; the creator gets `challenge.declined`. |
+| `challenge.cancel` | `token` (string) | **[Phase 6]** Cancel a challenge you created; a direct target gets `challenge.gone`. |
 
 Example:
 
@@ -169,11 +189,16 @@ Example:
 | `type` | Fields | When |
 |---|---|---|
 | `online.count` | `n` (int) | Broadcast to everyone on every register/unregister. |
+| `online.list` | `users` (array of `{uid, name}`) | **[Phase 6]** Live roster of connected users, broadcast alongside `online.count`. Drives the lobby's online-players panel; the client filters out its own `uid`. |
 | `queue.waiting` | — | You joined a pool with no waiting opponent; you're parked. |
 | `game.start` | `game_id`, `color` (`"white"`/`"black"`), `opponent` (display name), `clocks` (`{white_ms,black_ms}`), `fen` | A match was made. Colors are random; both players receive opposite colors and the same `game_id`. |
 | `game.state` | `game_id`, `fen`, `last_move` (UCI), `white_ms`, `black_ms`, `turn` (`"white"`/`"black"`) | After every accepted move. Authoritative board + clocks. |
 | `game.over` | `game_id`, `result` (`"1-0"`/`"0-1"`/`"1/2-1/2"`), `reason`, `ratings` (optional) | Terminal transition. For **rated** games `ratings` carries per-color before/after/delta (see below); it is **omitted** for aborted / 0-move games. |
 | `draw.offered` | `game_id`, `from` (offerer's `uid`) | Opponent offered a draw. |
+| `challenge.incoming` | `token`, `from` (uid), `from_name` (display name), `base`, `increment`, `category` | **[Phase 6]** Someone directly challenged you. Show an Accept/Decline prompt. |
+| `challenge.created` | `token`, `url` (empty for direct) | **[Phase 6]** Ack that your challenge was registered. |
+| `challenge.declined` | `token` | **[Phase 6]** Your direct challenge was declined (or the target went offline). |
+| `challenge.gone` | `token` | **[Phase 6]** A challenge you received was withdrawn (creator cancelled or disconnected). Remove its prompt. |
 | `pong` | — | Reply to `ping`. |
 | `error` | `code`, `msg` | A request was rejected; game state is untouched. |
 
@@ -219,6 +244,10 @@ Example:
 | `not_in_game` | You sent an in-game action but aren't in a game. |
 | `game_not_active` | Action against a finished game. |
 | `unknown_game` | `game_id` doesn't match your active game. |
+| `unknown_challenge` | **[Phase 6]** Token is missing, already used, or not addressed to you. |
+| `challenge_self` | **[Phase 6]** You tried to challenge or accept your own challenge. |
+| `busy` | **[Phase 6]** One of the two players is already in a game. |
+| `opponent_offline` | **[Phase 6]** The challenge target (or creator, at accept time) is not connected. |
 
 ---
 
@@ -233,9 +262,8 @@ Example:
 
 ## Not yet live (don't build against these yet)
 
-- Challenge-by-link / direct challenge: `challenge.accept`, `challenge.create_direct`, `challenge.incoming` (Phase 6).
 - `rematch.offer` / `rematch.respond` / `rematch.offered`, in-game `chat`, spectating, reconnect-resume (Phase 7).
-- `GET /api/games/{id}` single-game detail (Phase 6).
+- `GET /api/games/{id}` single-game detail.
 
 ---
 
