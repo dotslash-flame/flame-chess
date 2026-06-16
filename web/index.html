@@ -2168,6 +2168,7 @@ const state = {
   game:{ id:null, color:null, fen:null, turn:'white', whiteMs:null, blackMs:null,
          opp:null, lastMove:null, moves:[], over:false, drawFrom:null },
   lastDelta:null,
+  onlineUsers:[], incoming:{}, pendingOut:null, linkToken:null,
 };
 
 // ===== view router =====
@@ -2230,6 +2231,8 @@ async function devLogin(){
   }catch(e){$('#authMsg').textContent='login failed';}
 }
 async function boot(){
+  try{ const u=new URL(location.href); const c=u.searchParams.get('c');
+    if(c){ state.linkToken=c; u.searchParams.delete('c'); history.replaceState(null,'',u.pathname+u.search+u.hash); } }catch(_){}
   try{ const r=await api('/api/me');
     if(r.ok){ setIdentity(await r.json()); enterApp(); return; } }catch(_){}
   $('#topbar').classList.add('hidden'); showView('landing');
@@ -2244,6 +2247,7 @@ async function logout(){
   state.ws=null; state.me=null;
   state.game={ id:null, color:null, fen:null, turn:'white', whiteMs:null, blackMs:null,
                opp:null, lastMove:null, moves:[], over:false, drawFrom:null };
+  state.onlineUsers=[]; state.incoming={}; state.pendingOut=null; renderToasts();
   stopClock();
   $('#topbar').classList.add('hidden'); showView('landing');
 }
@@ -2359,7 +2363,8 @@ function connectWS(){
   const proto=location.protocol==='https:'?'wss':'ws';
   const ws=new WebSocket(proto+'://'+location.host+'/ws'); state.ws=ws;
   ws.onopen=()=>{ const b=$('#reconnBanner'); if(b)b.classList.add('hidden');
-    const jb=$('#joinBtn'); if(jb)jb.disabled=false; };
+    const jb=$('#joinBtn'); if(jb)jb.disabled=false;
+    if(state.linkToken){ wsSend({type:'challenge.accept',token:state.linkToken}); state.linkToken=null; } };
   ws.onclose=()=>{ showReconnectBanner(); setTimeout(()=>{ if(state.me) connectWS(); },1500); };
   ws.onerror=()=>{};
   ws.onmessage=ev=>handleWS(JSON.parse(ev.data));
@@ -2369,16 +2374,53 @@ function handleWS(m){
   logEvent('in',m);
   switch(m.type){
     case 'online.count': state.online=m.n; { const p=$('#onlinePill'); if(p)p.textContent='online: '+m.n; } break;
+    case 'online.list': state.onlineUsers=m.users||[]; if(state.view==='lobby') renderOnlinePanel(); break;
     case 'queue.waiting': setQueueMsg('searching for an opponent…'); break;
-    case 'game.start': onGameStart(m); break;
+    case 'game.start': state.pendingOut=null; renderToasts(); onGameStart(m); break;
     case 'game.state': onGameState(m); break;
     case 'game.over': onGameOver(m); break;
     case 'draw.offered': state.game.drawFrom=m.from; renderGame(); break;
+    case 'challenge.incoming': state.incoming[m.token]={from_name:m.from_name,base:m.base,increment:m.increment,category:m.category}; renderToasts(); playSound('start'); break;
+    case 'challenge.created': if(state.pendingOut)state.pendingOut.token=m.token; renderToasts(); break;
+    case 'challenge.declined': { const n=state.pendingOut&&state.pendingOut.name; state.pendingOut=null; renderToasts(); flashNotice((n||'They')+' declined'); } break;
+    case 'challenge.gone': delete state.incoming[m.token]; renderToasts(); break;
     case 'pong': break;
-    case 'error': setQueueMsg('error: '+m.code+' — '+m.msg); break;
+    case 'error': handleChallengeError(m); break;
   }
 }
+const CHALLENGE_ERRORS={unknown_challenge:'That challenge is no longer available.',opponent_offline:"They're offline.",busy:'One of you is already in a game.',challenge_self:"You can't challenge yourself."};
+function handleChallengeError(m){
+  if(CHALLENGE_ERRORS[m.code]){ state.pendingOut=null; renderToasts(); flashNotice(CHALLENGE_ERRORS[m.code]); return; }
+  setQueueMsg('error: '+m.code+' — '+m.msg);
+}
 function setQueueMsg(t){ const e=$('#queueMsg'); if(e)e.textContent=t; }
+function fmtTC(base,inc){ return (base/60)+'+'+(inc||0); }
+function toastRoot(){ let r=$('#toastRoot'); if(!r){ r=el('div'); r.id='toastRoot';
+  r.style.cssText='position:fixed;right:14px;bottom:14px;display:flex;flex-direction:column;gap:8px;z-index:55;max-width:300px'; document.body.appendChild(r);} return r; }
+function renderToasts(){
+  const r=toastRoot(); let h='';
+  for(const [token,c] of Object.entries(state.incoming)){
+    h+=`<div class="panel" style="padding:12px">
+      <div class="muted" style="font-size:11px">CHALLENGE</div>
+      <div class="me"><b>${esc(c.from_name||'someone')}</b> · ${esc(c.category||'')} ${fmtTC(c.base,c.increment)}</div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn primary" data-acc="${esc(token)}" style="flex:1">Accept</button>
+        <button class="btn" data-dec="${esc(token)}" style="flex:1">Decline</button></div></div>`;
+  }
+  if(state.pendingOut){ h+=`<div class="panel" style="padding:12px">
+      <div class="muted" style="font-size:11px">WAITING</div>
+      <div class="me">waiting for <b>${esc(state.pendingOut.name||'opponent')}</b>…</div></div>`; }
+  r.innerHTML=h;
+  r.querySelectorAll('[data-acc]').forEach(b=>b.onclick=()=>{ wsSend({type:'challenge.accept',token:b.dataset.acc}); delete state.incoming[b.dataset.acc]; renderToasts(); });
+  r.querySelectorAll('[data-dec]').forEach(b=>b.onclick=()=>{ wsSend({type:'challenge.decline',token:b.dataset.dec}); delete state.incoming[b.dataset.dec]; renderToasts(); });
+}
+let noticeTimer=null;
+function flashNotice(t){
+  let n=$('#noticeBar'); if(!n){ n=el('div'); n.id='noticeBar';
+    n.style.cssText='position:fixed;top:48px;left:50%;transform:translateX(-50%);background:var(--panel,#242424);border:1px solid #ffffff22;color:#fff;padding:8px 16px;border-radius:8px;z-index:60;font-weight:600;box-shadow:0 4px 16px #0008'; document.body.appendChild(n);}
+  n.textContent=t; n.style.display='block';
+  clearTimeout(noticeTimer); noticeTimer=setTimeout(()=>{ n.style.display='none'; },2600);
+}
 
 // ===== lobby =====
 const TIME_CONTROLS=[
@@ -2408,19 +2450,60 @@ function renderLobby(){
        </div>
        <button class="btn primary" id="joinBtn" style="width:100%">Find match ▸</button>
        <button class="btn hidden" id="leaveBtn" style="width:100%;margin-top:6px">Cancel search</button>
+       <button class="btn" id="friendBtn" style="width:100%;margin-top:6px">Play a friend (link) 🔗</button>
        <div class="muted" id="queueMsg" style="margin-top:8px"></div>
      </div>
      <div style="display:flex;flex-direction:column;gap:12px">
        <div class="panel"><div class="muted" style="font-size:11px">YOUR ${cat.toUpperCase()}</div>
          <div class="me" style="font-size:30px">${rc?rc.rating:'—'}</div>
          <div class="muted" style="font-size:12px">${rc?rc.games_played+' games':''} ${deltaBadge(state.lastDelta)}</div></div>
+       <div class="panel" id="onlinePanel"><div class="muted" style="font-size:11px">ONLINE</div><div class="muted">loading…</div></div>
        <div class="panel" id="lbPeek"><div class="muted" style="font-size:11px">TOP ${cat.toUpperCase()}</div><div class="muted">loading…</div></div>
        <div class="panel" id="recentPeek"><div class="muted" style="font-size:11px">RECENT</div><div class="muted">loading…</div></div>
      </div>
    </div>`;
   document.querySelectorAll('[data-tc]').forEach(b=>b.onclick=()=>{selectedTC=+b.dataset.tc;renderLobby();});
   $('#joinBtn').onclick=joinQueue; $('#leaveBtn').onclick=()=>{wsSend({type:'queue.leave'});searchUI(false);};
-  loadLbPeek(cat); loadRecentPeek();
+  $('#friendBtn').onclick=createFriendLink;
+  loadLbPeek(cat); loadRecentPeek(); renderOnlinePanel();
+}
+function renderOnlinePanel(){
+  const box=$('#onlinePanel'); if(!box)return;
+  const me=state.me&&state.me.uid;
+  const others=(state.onlineUsers||[]).filter(u=>u.uid!==me);
+  box.innerHTML='<div class="muted" style="font-size:11px">ONLINE — CHALLENGE</div>'+
+    (others.length?others.map(u=>`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+      <span>${esc(u.name||'anon')}</span>
+      <button class="btn" data-chal="${esc(u.uid)}" data-name="${esc(u.name||'anon')}" style="padding:4px 10px">Challenge</button></div>`).join('')
+     :'<div class="muted">no one else online</div>');
+  box.querySelectorAll('[data-chal]').forEach(b=>b.onclick=()=>challengeUser(b.dataset.chal,b.dataset.name));
+}
+function challengeUser(uid,name){
+  const base=+($('#cbase').value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc').value)||0;
+  wsSend({type:'challenge.create_direct',opponent_id:uid,base,increment:inc});
+  state.pendingOut={uid,name,base,increment:inc}; renderToasts();
+}
+async function createFriendLink(){
+  const base=+($('#cbase').value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc').value)||0;
+  try{ const r=await api('/api/challenges',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({base,increment:inc})});
+    if(!r.ok){ flashNotice('Could not create link'); return; }
+    const d=await r.json(); showLinkModal(d.url);
+  }catch(_){ flashNotice('Could not create link'); }
+}
+function showLinkModal(url){
+  $('#overlayRoot').innerHTML=`<div class="ovl"><div class="panel" style="min-width:320px;max-width:440px">
+    <div class="me" style="font-size:14px;letter-spacing:1px">SHARE THIS LINK</div>
+    <p class="muted" style="font-size:12px">First friend to open it starts the game with you.</p>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <input id="linkInput" readonly style="flex:1" value="${esc(url)}">
+      <button class="btn primary" id="linkCopy">Copy</button></div>
+    <button class="btn" id="linkClose" style="width:100%;margin-top:10px">Close</button></div></div>`;
+  const inp=$('#linkInput');
+  $('#linkCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(url); }catch(_){ inp.select(); document.execCommand&&document.execCommand('copy'); }
+    $('#linkCopy').textContent='Copied ✓'; };
+  $('#linkClose').onclick=()=>{ $('#overlayRoot').innerHTML=''; };
+  inp.focus(); inp.select();
 }
 function deltaBadge(d){ if(d==null)return''; const c=d>0?'ok':d<0?'bad':'muted';
   const s=d>0?'+'+d:d<0?'−'+Math.abs(d):'±0'; return `<span class="pill ${c}">${s}</span>`; }
