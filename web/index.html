@@ -2379,7 +2379,7 @@ function handleWS(m){
     case 'game.start': state.pendingOut=null; renderToasts(); onGameStart(m); break;
     case 'game.state': onGameState(m); break;
     case 'game.over': onGameOver(m); break;
-    case 'draw.offered': state.game.drawFrom=m.from; renderGame(); break;
+    case 'draw.offered': state.game.drawFrom=m.from; renderGame(); renderDrawPopup(); playSound('offer'); break;
     case 'challenge.incoming': state.incoming[m.token]={from_name:m.from_name,base:m.base,increment:m.increment,category:m.category}; renderToasts(); playSound('start'); break;
     case 'challenge.created': if(state.pendingOut)state.pendingOut.token=m.token; renderToasts(); break;
     case 'challenge.declined': { const n=state.pendingOut&&state.pendingOut.name; state.pendingOut=null; renderToasts(); flashNotice((n||'They')+' declined'); } break;
@@ -2587,6 +2587,23 @@ function renderGame(){
   $('#drawNo').onclick=()=>{wsSend({type:'draw.respond',game_id:state.game.id,accept:false});state.game.drawFrom=null;renderGame();};
   $('#drawOffer').classList.toggle('hidden', !state.game.drawFrom || state.game.over);
   const dis=state.game.over; ['resignBtn','drawBtn'].forEach(id=>{const b=$('#'+id);if(b)b.disabled=dis;});
+  renderDrawPopup();
+}
+function drawPopupRoot(){ let r=$('#drawPopup'); if(!r){ r=el('div'); r.id='drawPopup';
+  r.style.cssText='position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:62;width:calc(100% - 28px);max-width:320px'; document.body.appendChild(r);} return r; }
+function respondDraw(accept){ if(state.game.id)wsSend({type:'draw.respond',game_id:state.game.id,accept}); state.game.drawFrom=null; renderGame(); }
+function renderDrawPopup(){
+  const r=drawPopupRoot();
+  if(!state.game.drawFrom || state.game.over){ r.innerHTML=''; r.style.display='none'; return; }
+  r.style.display='block';
+  r.innerHTML=`<div class="panel" style="padding:14px;text-align:center;border:1px solid var(--warn);box-shadow:0 8px 28px #000a">
+    <div class="muted" style="font-size:11px;letter-spacing:1px">DRAW OFFER</div>
+    <div class="me" style="margin:4px 0 10px"><b>${esc(state.game.opp||'Opponent')}</b> offers a draw</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn primary" id="drawPopYes" style="flex:1">Accept</button>
+      <button class="btn" id="drawPopNo" style="flex:1">Decline</button></div></div>`;
+  $('#drawPopYes').onclick=()=>respondDraw(true);
+  $('#drawPopNo').onclick=()=>respondDraw(false);
 }
 function capturedFromFen(fen){
   const counts={p:0,n:0,b:0,r:0,q:0,P:0,N:0,B:0,R:0,Q:0};
@@ -2654,11 +2671,8 @@ function paintClocks(){ const fmt=ms=>{ms=Math.max(0,ms|0);const s=Math.floor(ms
 
 // ===== sound =====
 const Sound=(()=>{
-  let ctx=null, muted=localStorage.getItem('fc_mute')==='1';
+  let ctx=null, muted=localStorage.getItem('fc_mute')==='1', unlocked=false, silentEl=null;
   function ensure(){ if(!ctx){ try{ctx=new (window.AudioContext||window.webkitAudioContext)();}catch(_){}} }
-<<<<<<< Updated upstream
-  function tone(freq,dur,type='sine',gain=0.08){ if(muted)return; ensure(); if(!ctx)return;
-=======
   function silentWavUrl(){ const sr=8000,n=sr/2,len=44+n*2,buf=new ArrayBuffer(len),v=new DataView(buf);
     const wr=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
     wr(0,'RIFF');v.setUint32(4,36+n*2,true);wr(8,'WAVE');wr(12,'fmt ');
@@ -2677,21 +2691,11 @@ const Sound=(()=>{
     try{ silentEl=new Audio(silentWavUrl()); silentEl.loop=true; silentEl.volume=0.01; silentEl.setAttribute('playsinline','');
       const p=silentEl.play(); if(p&&p.catch)p.catch(()=>{}); }catch(_){} }
   function tone(freq,dur,type='sine',gain=0.32){ if(muted)return; ensure(); if(!ctx)return;
->>>>>>> Stashed changes
     if(ctx.state!=='running'){ try{ctx.resume();}catch(_){} }
     const o=ctx.createOscillator(),g=ctx.createGain();
     o.type=type;o.frequency.value=freq;g.gain.value=gain;
     o.connect(g);g.connect(ctx.destination);const t=ctx.currentTime;
     o.start(t);g.gain.setValueAtTime(gain,t);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);o.stop(t+dur); }
-<<<<<<< Updated upstream
-  const cues={ move:()=>tone(440,0.08,'triangle'),
-    capture:()=>{tone(300,0.09,'sawtooth',0.09);setTimeout(()=>tone(200,0.07,'square',0.06),40);},
-    castle:()=>{tone(360,0.07);setTimeout(()=>tone(480,0.07),60);},
-    check:()=>tone(720,0.12,'square',0.07),
-    over:()=>{tone(523,0.15);setTimeout(()=>tone(392,0.2),120);},
-    low:()=>tone(880,0.06,'square',0.05),
-    start:()=>{tone(392,0.1);setTimeout(()=>tone(523,0.12),90);} };
-=======
   const cues={ move:()=>tone(440,0.08,'triangle',0.34),
     capture:()=>{tone(300,0.09,'sawtooth',0.38);setTimeout(()=>tone(200,0.07,'square',0.28),40);},
     castle:()=>{tone(360,0.07,'sine',0.34);setTimeout(()=>tone(480,0.07,'sine',0.34),60);},
@@ -2700,10 +2704,9 @@ const Sound=(()=>{
     low:()=>tone(880,0.06,'square',0.26),
     offer:()=>{tone(523,0.14,'sine',0.38);setTimeout(()=>tone(659,0.16,'sine',0.38),150);setTimeout(()=>tone(784,0.18,'sine',0.34),320);},
     start:()=>{tone(392,0.1,'sine',0.34);setTimeout(()=>tone(523,0.12,'sine',0.34),90);} };
->>>>>>> Stashed changes
   return { play(name){ ensure(); cues[name]&&cues[name](); },
     toggle(){ muted=!muted; localStorage.setItem('fc_mute',muted?'1':'0'); return muted; },
-    isMuted(){ return muted; }, resume(){ ensure(); if(ctx&&ctx.state==='suspended')ctx.resume(); } };
+    isMuted(){ return muted; }, resume(){ unlock(); } };
 })();
 function playSound(n){ Sound.play(n); }
 function classifyAndSound(prevFen,uci){
@@ -2725,7 +2728,7 @@ refreshMuteBtn();
 
 // ===== game over =====
 function onGameOver(m){
-  state.game.over=true; stopClock(); playSound('over');
+  state.game.over=true; stopClock(); state.game.drawFrom=null; renderDrawPopup(); playSound('over');
   let deltaHtml='';
   if(m.ratings && state.game.color){ const r=m.ratings[state.game.color];
     if(r){ state.lastDelta=r.delta;
