@@ -24,6 +24,10 @@ type Router interface {
 	QueueJoin(userID, category string, base, increment int)
 	QueueLeave(userID string)
 	Route(userID string, a hub.GameAction)
+	CreateDirectChallenge(userID, opponentID string, base, increment int)
+	AcceptChallenge(userID, token string)
+	DeclineChallenge(userID, token string)
+	CancelChallenge(userID, token string)
 }
 
 type Conn struct {
@@ -138,6 +142,34 @@ func (c *Conn) dispatch(raw []byte) {
 		var m wire.DrawRespond
 		_ = json.Unmarshal(raw, &m)
 		c.router.Route(c.id.UserID, hub.GameAction{GameID: m.GameID, Kind: "draw_respond", Accept: m.Accept})
+	case wire.TypeChallengeCreateDirect:
+		var m wire.ChallengeCreateDirect
+		if json.Unmarshal(raw, &m) != nil {
+			c.Send(wire.NewError(wire.CodeBadMessage, "bad challenge.create_direct"))
+			return
+		}
+		c.router.CreateDirectChallenge(c.id.UserID, m.OpponentID, m.Base, m.Increment)
+	case wire.TypeChallengeAccept:
+		var m wire.ChallengeAccept
+		if json.Unmarshal(raw, &m) != nil {
+			c.Send(wire.NewError(wire.CodeBadMessage, "bad challenge.accept"))
+			return
+		}
+		c.router.AcceptChallenge(c.id.UserID, m.Token)
+	case wire.TypeChallengeDecline:
+		var m wire.ChallengeDecline
+		if json.Unmarshal(raw, &m) != nil {
+			c.Send(wire.NewError(wire.CodeBadMessage, "bad challenge.decline"))
+			return
+		}
+		c.router.DeclineChallenge(c.id.UserID, m.Token)
+	case wire.TypeChallengeCancel:
+		var m wire.ChallengeCancel
+		if json.Unmarshal(raw, &m) != nil {
+			c.Send(wire.NewError(wire.CodeBadMessage, "bad challenge.cancel"))
+			return
+		}
+		c.router.CancelChallenge(c.id.UserID, m.Token)
 	case wire.TypePing:
 		c.Send(wire.NewPong())
 	default:

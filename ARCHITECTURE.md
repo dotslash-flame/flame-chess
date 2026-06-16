@@ -29,7 +29,7 @@ Status
 - [x] Phase 3: WS + Hub + quick-match (first playable).
 - [x] Phase 4: Auth (Google OAuth + suffix gate).
 - [x] Phase 5: Persistence & ratings.
-- [ ] Phase 6: Challenges.
+- [x] Phase 6: Challenges.
 - [ ] Phase 7: Extras (chat, rematch, spectating).
 - [ ] Phase 8: Test client.
 - [ ] Phase 9: Anti-cheat (standalone).
