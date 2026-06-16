@@ -19,6 +19,16 @@ const (
 	TypeDrawOffered  = "draw.offered"
 	TypePong         = "pong"
 	TypeError        = "error"
+
+	TypeChallengeCreateDirect = "challenge.create_direct"
+	TypeChallengeAccept       = "challenge.accept"
+	TypeChallengeDecline      = "challenge.decline"
+	TypeChallengeCancel       = "challenge.cancel"
+	TypeChallengeIncoming     = "challenge.incoming"
+	TypeChallengeCreated      = "challenge.created"
+	TypeChallengeDeclined     = "challenge.declined"
+	TypeChallengeGone         = "challenge.gone"
+	TypeOnlineList            = "online.list"
 )
 
 const (
@@ -28,6 +38,11 @@ const (
 	CodeNotInGame     = "not_in_game"
 	CodeGameNotActive = "game_not_active"
 	CodeUnknownGame   = "unknown_game"
+
+	CodeUnknownChallenge = "unknown_challenge"
+	CodeChallengeSelf    = "challenge_self"
+	CodeBusy             = "busy"
+	CodeOpponentOffline  = "opponent_offline"
 )
 
 type Conn interface {
@@ -160,4 +175,89 @@ type Error struct {
 
 func NewError(code, msg string) Error {
 	return Error{Type: TypeError, Code: code, Msg: msg}
+}
+
+// Client → server challenge messages.
+
+type ChallengeCreateDirect struct {
+	Type       string `json:"type"`
+	OpponentID string `json:"opponent_id"`
+	Base       int    `json:"base"`
+	Increment  int    `json:"increment"`
+}
+
+type ChallengeAccept struct {
+	Type  string `json:"type"`
+	Token string `json:"token"`
+}
+
+type ChallengeDecline struct {
+	Type  string `json:"type"`
+	Token string `json:"token"`
+}
+
+type ChallengeCancel struct {
+	Type  string `json:"type"`
+	Token string `json:"token"`
+}
+
+// Server → client challenge messages.
+
+type ChallengeIncoming struct {
+	Type      string `json:"type"`
+	Token     string `json:"token"`
+	From      string `json:"from"`
+	FromName  string `json:"from_name"`
+	Base      int    `json:"base"`
+	Increment int    `json:"increment"`
+	Category  string `json:"category"`
+}
+
+func NewChallengeIncoming(token, from, fromName string, base, increment int, category string) ChallengeIncoming {
+	return ChallengeIncoming{
+		Type: TypeChallengeIncoming, Token: token, From: from, FromName: fromName,
+		Base: base, Increment: increment, Category: category,
+	}
+}
+
+type ChallengeCreated struct {
+	Type  string `json:"type"`
+	Token string `json:"token"`
+	URL   string `json:"url"`
+}
+
+func NewChallengeCreated(token, url string) ChallengeCreated {
+	return ChallengeCreated{Type: TypeChallengeCreated, Token: token, URL: url}
+}
+
+type ChallengeDeclined struct {
+	Type  string `json:"type"`
+	Token string `json:"token"`
+}
+
+func NewChallengeDeclined(token string) ChallengeDeclined {
+	return ChallengeDeclined{Type: TypeChallengeDeclined, Token: token}
+}
+
+type ChallengeGone struct {
+	Type  string `json:"type"`
+	Token string `json:"token"`
+}
+
+func NewChallengeGone(token string) ChallengeGone {
+	return ChallengeGone{Type: TypeChallengeGone, Token: token}
+}
+
+type OnlineUser struct {
+	UID  string `json:"uid"`
+	Name string `json:"name"`
+}
+
+type OnlineList struct {
+	Type  string       `json:"type"`
+	Users []OnlineUser `json:"users"`
+}
+
+func NewOnlineList(users []OnlineUser) OnlineList {
+	return OnlineList{Type: TypeOnlineList, Users: users}
 }

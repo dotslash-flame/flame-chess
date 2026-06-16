@@ -11,17 +11,25 @@ import (
 )
 
 type fakeRouter struct {
-	joins  []wire.QueueJoin
-	routes []hub.GameAction
+	joins   []wire.QueueJoin
+	routes  []hub.GameAction
+	directs []wire.ChallengeCreateDirect
+	accepts []string
 }
 
 func (f *fakeRouter) Register(wire.Conn)   {}
 func (f *fakeRouter) Unregister(wire.Conn) {}
-func (f *fakeRouter) QueueJoin(_ , category string, base, increment int) {
+func (f *fakeRouter) QueueJoin(_, category string, base, increment int) {
 	f.joins = append(f.joins, wire.QueueJoin{Category: category, Base: base, Increment: increment})
 }
-func (f *fakeRouter) QueueLeave(string)                  {}
-func (f *fakeRouter) Route(_ string, a hub.GameAction)   { f.routes = append(f.routes, a) }
+func (f *fakeRouter) QueueLeave(string)                {}
+func (f *fakeRouter) Route(_ string, a hub.GameAction) { f.routes = append(f.routes, a) }
+func (f *fakeRouter) CreateDirectChallenge(_, opponentID string, base, increment int) {
+	f.directs = append(f.directs, wire.ChallengeCreateDirect{OpponentID: opponentID, Base: base, Increment: increment})
+}
+func (f *fakeRouter) AcceptChallenge(_, token string)  { f.accepts = append(f.accepts, token) }
+func (f *fakeRouter) DeclineChallenge(_, token string) {}
+func (f *fakeRouter) CancelChallenge(_, token string)  {}
 
 func newTestConn(r Router) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -58,6 +66,31 @@ func TestDispatchQueueJoin(t *testing.T) {
 
 	if len(fr.joins) != 1 || fr.joins[0].Base != 300 {
 		t.Fatalf("joins = %+v, want one base=300", fr.joins)
+	}
+}
+
+func TestDispatchChallengeCreateDirect(t *testing.T) {
+	fr := &fakeRouter{}
+	c := newTestConn(fr)
+
+	c.dispatch([]byte(`{"type":"challenge.create_direct","opponent_id":"u-2","base":300,"increment":2}`))
+
+	if len(fr.directs) != 1 {
+		t.Fatalf("directs = %d, want 1", len(fr.directs))
+	}
+	if d := fr.directs[0]; d.OpponentID != "u-2" || d.Base != 300 || d.Increment != 2 {
+		t.Errorf("direct = %+v, want u-2/300/2", d)
+	}
+}
+
+func TestDispatchChallengeAccept(t *testing.T) {
+	fr := &fakeRouter{}
+	c := newTestConn(fr)
+
+	c.dispatch([]byte(`{"type":"challenge.accept","token":"tok-1"}`))
+
+	if len(fr.accepts) != 1 || fr.accepts[0] != "tok-1" {
+		t.Fatalf("accepts = %+v, want [tok-1]", fr.accepts)
 	}
 }
 

@@ -176,3 +176,170 @@ func TestGameEndedFreesPlayers(t *testing.T) {
 		t.Error("a should be able to re-queue after game ended")
 	}
 }
+
+func TestDirectChallengeCreateAndAccept(t *testing.T) {
+	h := newTestHub()
+	ca := &fakeConn{uid: "a", name: "Alice"}
+	cb := &fakeConn{uid: "b", name: "Bob"}
+	h.handle(registerCmd{conn: ca})
+	h.handle(registerCmd{conn: cb})
+
+	h.handle(createChallengeCmd{creator: "a", creatorName: "Alice", opponent: "b", base: 300, increment: 0})
+
+	inc, ok := lastOf[wire.ChallengeIncoming](cb)
+	if !ok {
+		t.Fatal("target should receive challenge.incoming")
+	}
+	if inc.From != "a" || inc.FromName != "Alice" || inc.Category != "blitz" {
+		t.Errorf("incoming = %+v, want from a/Alice/blitz", inc)
+	}
+	if _, ok := lastOf[wire.ChallengeCreated](ca); !ok {
+		t.Error("creator should receive challenge.created ack")
+	}
+
+	h.handle(acceptChallengeCmd{userID: "b", token: inc.Token})
+
+	sa, ok := lastOf[wire.GameStart](ca)
+	if !ok {
+		t.Fatal("creator got no game.start after accept")
+	}
+	sb, ok := lastOf[wire.GameStart](cb)
+	if !ok {
+		t.Fatal("accepter got no game.start after accept")
+	}
+	if sa.GameID != sb.GameID {
+		t.Errorf("game ids differ: %q vs %q", sa.GameID, sb.GameID)
+	}
+	if _, live := h.challenges[inc.Token]; live {
+		t.Error("token must be single-use (deleted after accept)")
+	}
+}
+
+func TestAcceptUnknownToken(t *testing.T) {
+	h := newTestHub()
+	cb := &fakeConn{uid: "b", name: "Bob"}
+	h.handle(registerCmd{conn: cb})
+
+	h.handle(acceptChallengeCmd{userID: "b", token: "nope"})
+
+	if e, ok := lastOf[wire.Error](cb); !ok || e.Code != wire.CodeUnknownChallenge {
+		t.Errorf("error = %+v ok=%v, want unknown_challenge", e, ok)
+	}
+}
+
+func TestAcceptOwnLinkIsSelfChallenge(t *testing.T) {
+	h := newTestHub()
+	ca := &fakeConn{uid: "a", name: "Alice"}
+	h.handle(registerCmd{conn: ca})
+
+	h.handle(createChallengeCmd{creator: "a", creatorName: "Alice", opponent: "", base: 300})
+	h.handle(acceptChallengeCmd{userID: "a", token: "game-1"})
+
+	if e, ok := lastOf[wire.Error](ca); !ok || e.Code != wire.CodeChallengeSelf {
+		t.Errorf("error = %+v ok=%v, want challenge_self", e, ok)
+	}
+}
+
+func TestAcceptCreatorOffline(t *testing.T) {
+	h := newTestHub()
+	ca := &fakeConn{uid: "a", name: "Alice"}
+	cb := &fakeConn{uid: "b", name: "Bob"}
+	h.handle(registerCmd{conn: ca})
+	h.handle(registerCmd{conn: cb})
+
+	h.handle(createChallengeCmd{creator: "a", creatorName: "Alice", opponent: "b", base: 300})
+	inc, _ := lastOf[wire.ChallengeIncoming](cb)
+
+	delete(h.online, "a")
+	h.handle(acceptChallengeCmd{userID: "b", token: inc.Token})
+
+	if e, ok := lastOf[wire.Error](cb); !ok || e.Code != wire.CodeOpponentOffline {
+		t.Errorf("error = %+v ok=%v, want opponent_offline", e, ok)
+	}
+}
+
+func TestCreateDirectBusyTargetInGame(t *testing.T) {
+	h := newTestHub()
+	ca := &fakeConn{uid: "a", name: "Alice"}
+	cb := &fakeConn{uid: "b", name: "Bob"}
+	h.handle(registerCmd{conn: ca})
+	h.handle(registerCmd{conn: cb})
+	h.userGame["b"] = "some-game"
+
+	h.handle(createChallengeCmd{creator: "a", creatorName: "Alice", opponent: "b", base: 300})
+
+	if e, ok := lastOf[wire.Error](ca); !ok || e.Code != wire.CodeBusy {
+		t.Errorf("error = %+v ok=%v, want busy", e, ok)
+	}
+	if _, got := lastOf[wire.ChallengeIncoming](cb); got {
+		t.Error("busy target must not receive an incoming challenge")
+	}
+}
+
+func TestDeclineNotifiesCreator(t *testing.T) {
+	h := newTestHub()
+	ca := &fakeConn{uid: "a", name: "Alice"}
+	cb := &fakeConn{uid: "b", name: "Bob"}
+	h.handle(registerCmd{conn: ca})
+	h.handle(registerCmd{conn: cb})
+
+	h.handle(createChallengeCmd{creator: "a", creatorName: "Alice", opponent: "b", base: 300})
+	inc, _ := lastOf[wire.ChallengeIncoming](cb)
+	h.handle(declineChallengeCmd{userID: "b", token: inc.Token})
+
+	if d, ok := lastOf[wire.ChallengeDeclined](ca); !ok || d.Token != inc.Token {
+		t.Errorf("declined = %+v ok=%v, want token %q", d, ok, inc.Token)
+	}
+	if _, live := h.challenges[inc.Token]; live {
+		t.Error("declined challenge must be removed")
+	}
+}
+
+func TestUnregisterCreatorSendsGone(t *testing.T) {
+	h := newTestHub()
+	ca := &fakeConn{uid: "a", name: "Alice"}
+	cb := &fakeConn{uid: "b", name: "Bob"}
+	h.handle(registerCmd{conn: ca})
+	h.handle(registerCmd{conn: cb})
+
+	h.handle(createChallengeCmd{creator: "a", creatorName: "Alice", opponent: "b", base: 300})
+	inc, _ := lastOf[wire.ChallengeIncoming](cb)
+
+	h.handle(unregisterCmd{conn: ca})
+
+	if g, ok := lastOf[wire.ChallengeGone](cb); !ok || g.Token != inc.Token {
+		t.Errorf("gone = %+v ok=%v, want token %q", g, ok, inc.Token)
+	}
+	if _, live := h.challenges[inc.Token]; live {
+		t.Error("creator disconnect must drop the challenge")
+	}
+}
+
+func TestOnlineListBroadcast(t *testing.T) {
+	h := newTestHub()
+	ca := &fakeConn{uid: "a", name: "Alice"}
+	cb := &fakeConn{uid: "b", name: "Bob"}
+
+	h.handle(registerCmd{conn: ca})
+	h.handle(registerCmd{conn: cb})
+
+	list, ok := lastOf[wire.OnlineList](ca)
+	if !ok {
+		t.Fatal("expected online.list after registers")
+	}
+	if len(list.Users) != 2 {
+		t.Fatalf("online.list has %d users, want 2", len(list.Users))
+	}
+	names := map[string]string{}
+	for _, u := range list.Users {
+		names[u.UID] = u.Name
+	}
+	if names["a"] != "Alice" || names["b"] != "Bob" {
+		t.Errorf("online.list names = %+v, want a=Alice b=Bob", names)
+	}
+
+	h.handle(unregisterCmd{conn: ca})
+	if list, _ := lastOf[wire.OnlineList](cb); len(list.Users) != 1 {
+		t.Errorf("after unregister, online.list has %d users, want 1", len(list.Users))
+	}
+}

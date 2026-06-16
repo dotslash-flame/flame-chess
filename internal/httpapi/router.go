@@ -41,6 +41,7 @@ func NewRouter(h *hub.Hub, cfg *config.Config, st Store) http.Handler {
 	mux.HandleFunc("PATCH /api/me", patchMeHandler(st, secret, cp))
 	mux.HandleFunc("GET /api/leaderboard", leaderboardHandler(st, secret))
 	mux.HandleFunc("GET /api/games", gamesHandler(st, secret))
+	mux.HandleFunc("POST /api/challenges", challengesHandler(h, secret))
 	mux.Handle("GET /ws", ws.Handler(h, secret))
 	return corsMiddleware(cfg.CORSAllowedOrigins, mux)
 }
