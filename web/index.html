@@ -2656,12 +2656,34 @@ function paintClocks(){ const fmt=ms=>{ms=Math.max(0,ms|0);const s=Math.floor(ms
 const Sound=(()=>{
   let ctx=null, muted=localStorage.getItem('fc_mute')==='1';
   function ensure(){ if(!ctx){ try{ctx=new (window.AudioContext||window.webkitAudioContext)();}catch(_){}} }
+<<<<<<< Updated upstream
   function tone(freq,dur,type='sine',gain=0.08){ if(muted)return; ensure(); if(!ctx)return;
+=======
+  function silentWavUrl(){ const sr=8000,n=sr/2,len=44+n*2,buf=new ArrayBuffer(len),v=new DataView(buf);
+    const wr=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
+    wr(0,'RIFF');v.setUint32(4,36+n*2,true);wr(8,'WAVE');wr(12,'fmt ');
+    v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+    v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);
+    wr(36,'data');v.setUint32(40,n*2,true);
+    return URL.createObjectURL(new Blob([buf],{type:'audio/wav'})); }
+  // Mobile audio unlock. iOS keeps a fresh AudioContext suspended and, worse,
+  // routes WebAudio through the silent "ambient" session so the hardware mute
+  // switch kills every oscillator. Resuming the context handles the suspend;
+  // looping a near-silent HTML5 <audio> element flips iOS to the "playback"
+  // session so cues are audible even with the ringer off. Runs once per gesture.
+  function unlock(){ ensure(); if(ctx&&ctx.state!=='running'){ try{ctx.resume();}catch(_){} }
+    if(unlocked)return; unlocked=true;
+    if(ctx){ try{ const b=ctx.createBuffer(1,1,22050),s=ctx.createBufferSource(); s.buffer=b; s.connect(ctx.destination); s.start(0); }catch(_){} }
+    try{ silentEl=new Audio(silentWavUrl()); silentEl.loop=true; silentEl.volume=0.01; silentEl.setAttribute('playsinline','');
+      const p=silentEl.play(); if(p&&p.catch)p.catch(()=>{}); }catch(_){} }
+  function tone(freq,dur,type='sine',gain=0.32){ if(muted)return; ensure(); if(!ctx)return;
+>>>>>>> Stashed changes
     if(ctx.state!=='running'){ try{ctx.resume();}catch(_){} }
     const o=ctx.createOscillator(),g=ctx.createGain();
     o.type=type;o.frequency.value=freq;g.gain.value=gain;
     o.connect(g);g.connect(ctx.destination);const t=ctx.currentTime;
     o.start(t);g.gain.setValueAtTime(gain,t);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);o.stop(t+dur); }
+<<<<<<< Updated upstream
   const cues={ move:()=>tone(440,0.08,'triangle'),
     capture:()=>{tone(300,0.09,'sawtooth',0.09);setTimeout(()=>tone(200,0.07,'square',0.06),40);},
     castle:()=>{tone(360,0.07);setTimeout(()=>tone(480,0.07),60);},
@@ -2669,6 +2691,16 @@ const Sound=(()=>{
     over:()=>{tone(523,0.15);setTimeout(()=>tone(392,0.2),120);},
     low:()=>tone(880,0.06,'square',0.05),
     start:()=>{tone(392,0.1);setTimeout(()=>tone(523,0.12),90);} };
+=======
+  const cues={ move:()=>tone(440,0.08,'triangle',0.34),
+    capture:()=>{tone(300,0.09,'sawtooth',0.38);setTimeout(()=>tone(200,0.07,'square',0.28),40);},
+    castle:()=>{tone(360,0.07,'sine',0.34);setTimeout(()=>tone(480,0.07,'sine',0.34),60);},
+    check:()=>tone(720,0.12,'square',0.3),
+    over:()=>{tone(523,0.15,'sine',0.36);setTimeout(()=>tone(392,0.2,'sine',0.36),120);},
+    low:()=>tone(880,0.06,'square',0.26),
+    offer:()=>{tone(523,0.14,'sine',0.38);setTimeout(()=>tone(659,0.16,'sine',0.38),150);setTimeout(()=>tone(784,0.18,'sine',0.34),320);},
+    start:()=>{tone(392,0.1,'sine',0.34);setTimeout(()=>tone(523,0.12,'sine',0.34),90);} };
+>>>>>>> Stashed changes
   return { play(name){ ensure(); cues[name]&&cues[name](); },
     toggle(){ muted=!muted; localStorage.setItem('fc_mute',muted?'1':'0'); return muted; },
     isMuted(){ return muted; }, resume(){ ensure(); if(ctx&&ctx.state==='suspended')ctx.resume(); } };
