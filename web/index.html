@@ -2656,7 +2656,8 @@ function paintClocks(){ const fmt=ms=>{ms=Math.max(0,ms|0);const s=Math.floor(ms
 const Sound=(()=>{
   let ctx=null, muted=localStorage.getItem('fc_mute')==='1';
   function ensure(){ if(!ctx){ try{ctx=new (window.AudioContext||window.webkitAudioContext)();}catch(_){}} }
-  function tone(freq,dur,type='sine',gain=0.08){ if(muted||!ctx)return;
+  function tone(freq,dur,type='sine',gain=0.08){ if(muted)return; ensure(); if(!ctx)return;
+    if(ctx.state!=='running'){ try{ctx.resume();}catch(_){} }
     const o=ctx.createOscillator(),g=ctx.createGain();
     o.type=type;o.frequency.value=freq;g.gain.value=gain;
     o.connect(g);g.connect(ctx.destination);const t=ctx.currentTime;
@@ -2686,7 +2687,8 @@ function classifyAndSound(prevFen,uci){
 }
 function refreshMuteBtn(){ $('#muteBtn').textContent=Sound.isMuted()?'🔇':'🔊'; }
 $('#muteBtn').onclick=()=>{ Sound.toggle(); refreshMuteBtn(); };
-document.addEventListener('pointerdown',()=>Sound.resume(),{once:true});
+['pointerdown','touchend','click','keydown'].forEach(ev=>
+  document.addEventListener(ev,()=>Sound.resume(),{passive:true}));
 refreshMuteBtn();
 
 // ===== game over =====
