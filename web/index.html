@@ -54,7 +54,7 @@
          grid-template-rows:repeat(8,1fr);border-radius:10px;overflow:hidden;
          box-shadow:var(--shadow),0 0 0 1px #00000055,0 0 0 6px #1c1a17,0 0 0 7px #ffffff0d;}
   .sq{position:relative;display:flex;align-items:center;justify-content:center;
-      line-height:1;cursor:pointer;user-select:none;}
+      line-height:1;cursor:pointer;user-select:none;touch-action:none;}
   .sq.l{background:var(--light);} .sq.d{background:var(--dark);}
   .sq.sel::before{content:"";position:absolute;inset:0;background:var(--sel);}
   .sq.last::before{content:"";position:absolute;inset:0;background:var(--lastmv);}
@@ -2301,7 +2301,6 @@ function renderBoard(){
     }
     if(dests.includes(sq))c.appendChild(el('div','dot'+(pieces[sq]?' cap':'')));
     c.appendChild(el('span','coord',sq));
-    c.onclick=()=>clickSquare(sq);
     c.onpointerdown=ev=>onSquareDown(ev,sq);
     board.appendChild(c);
   }
@@ -2313,30 +2312,35 @@ function tryMove(from,to){
   const pieces=fenToBoard(state.game.fen); const p=pieces[from];
   const promo=(p==='P'&&to[1]==='8')||(p==='p'&&to[1]==='1');
   if(promo){ promptPromotion(pr=>doMove(from+to+pr)); } else doMove(from+to); }
-function clickSquare(sq){
-  if(!state.game.id||state.game.over) return;
-  const pieces=fenToBoard(state.game.fen);
-  if(sel===null){ if(isMine(pieces[sq])){sel=sq;renderBoard();} return; }
-  if(sq===sel){sel=null;renderBoard();return;}
-  if(isMine(pieces[sq])){ sel=sq; renderBoard(); return; } // reselect own piece
-  const from=sel; sel=null; renderBoard(); tryMove(from,sq);
-}
-// drag-to-move: pointerdown picks up own piece; pointerup over a square attempts the move
-let dragFrom=null;
+// Unified pointer handling: a single tap selects an own piece and shows its move dots
+// (no click handler, so the selection is no longer cleared by a trailing click).
+// Tap-to-move, tap-same-to-deselect, and drag-to-move all share this path.
 function onSquareDown(ev,sq){
   if(!state.game.id||state.game.over) return;
   const pieces=fenToBoard(state.game.fen);
-  if(!isMine(pieces[sq])) return;
-  dragFrom=sq; sel=sq; renderBoard();
+  const mine=isMine(pieces[sq]);
+  const prevSel=sel;
+  const sx=ev.clientX, sy=ev.clientY; let moved=false;
+  // pickup feedback: pressing a fresh own piece selects it immediately (shows dots)
+  if(mine && sq!==prevSel){ sel=sq; renderBoard(); }
+  const move=e=>{ if(!moved && (Math.abs(e.clientX-sx)>6||Math.abs(e.clientY-sy)>6)) moved=true; };
   const up=e=>{
+    document.removeEventListener('pointermove',move);
     document.removeEventListener('pointerup',up);
     const t=document.elementFromPoint(e.clientX,e.clientY);
     const cell=t&&t.closest&&t.closest('.sq');
     const to=cell&&cell.dataset?cell.dataset.sq:null;
-    const start=dragFrom; dragFrom=null;
-    if(to&&to!==start){ sel=null; renderBoard(); tryMove(start,to); }
-    // if released on same square (or off-board) keep selection for click-to-move
+    if(moved){ // drag release
+      if(sel && to && to!==sel){ const from=sel; sel=null; renderBoard(); tryMove(from,to); }
+      return;
+    }
+    if(mine){ // tap on own piece
+      if(sq===prevSel){ sel=null; renderBoard(); } // tap the selected piece again -> deselect
+      return; // otherwise it was just selected on pointerdown; keep dots
+    }
+    if(prevSel){ sel=null; renderBoard(); tryMove(prevSel,sq); } // tap a destination
   };
+  document.addEventListener('pointermove',move);
   document.addEventListener('pointerup',up);
 }
 function promptPromotion(cb){
