@@ -4,34 +4,50 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FlameChess</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#1c1c1c; --bg2:#242424; --panel:#2b2b2b; --panel2:#323232;
-    --txt:#e8e8e8; --muted:#9a9a9a; --line:#ffffff14;
-    --accent:#e87b35; --accent2:#f0974f; --ok:#8fd98f; --bad:#ff8a8a; --warn:#e8c35b;
-    --light:#ebecd0; --dark:#779556; --sel:#f6f66988; --lastmv:#e87b3555; --check:#ff5b5b88;
-    --radius:12px; --shadow:0 6px 20px #0007;
+    --bg:#161513; --bg2:#211f1c; --panel:#262420; --panel2:#302d28;
+    --txt:#ece8e1; --muted:#9d968a; --line:#ffffff14;
+    --accent:#ff7a2f; --accent2:#ffb056; --ok:#86d98f; --bad:#ff8a8a; --warn:#e8c35b;
+    --light:#eceed2; --dark:#6f8f4e; --sel:#f7f76e99; --lastmv:#ff7a2f55; --check:#ff5b5b99;
+    --radius:14px; --shadow:0 10px 30px #000a; --glow:0 0 24px #ff7a2f33;
   }
   *{box-sizing:border-box;}
-  body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--txt);}
+  body{margin:0;font:14px/1.5 'Inter',system-ui,sans-serif;color:var(--txt);min-height:100vh;
+       background:radial-gradient(1100px 560px at 50% -12%,#332d27,transparent 62%),var(--bg);background-attachment:fixed;}
   .hidden{display:none!important;}
-  .topbar{display:flex;align-items:center;gap:14px;padding:10px 16px;background:#181818;border-bottom:1px solid var(--line);}
-  .brand{color:var(--accent);font-weight:800;font-size:16px;}
-  .navlink{color:var(--muted);cursor:pointer;padding:4px 6px;border-radius:6px;}
-  .navlink:hover,.navlink.active{color:var(--txt);background:#ffffff10;}
+  .topbar{display:flex;align-items:center;gap:14px;padding:12px 18px;position:sticky;top:0;z-index:40;
+          background:#141312cc;backdrop-filter:blur(12px);border-bottom:1px solid var(--line);}
+  .brand{font-weight:800;font-size:17px;letter-spacing:.3px;
+         background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .navlink{color:var(--muted);cursor:pointer;padding:5px 10px;border-radius:8px;transition:background .15s,color .15s;display:inline-flex;align-items:center;gap:6px;}
+  .navlink:hover,.navlink.active{color:var(--txt);background:#ffffff12;}
   .spacer{margin-left:auto;}
-  .pill{padding:2px 10px;border-radius:20px;background:#0004;border:1px solid var(--line);color:var(--muted);font-size:12px;}
+  .pill{padding:3px 11px;border-radius:20px;background:#0005;border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:500;}
   .pill.ok{color:var(--ok);} .pill.warn{color:var(--warn);} .pill.bad{color:var(--bad);}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px;}
-  .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer;font:inherit;}
-  .btn:hover:not(:disabled){background:#3c3c3c;} .btn:disabled{opacity:.4;cursor:not-allowed;}
-  .btn.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#1a1a1a;font-weight:800;border:none;box-shadow:0 4px 14px #e87b3540;}
+  .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:var(--radius);padding:14px;
+         box-shadow:0 1px 0 #ffffff0a inset,0 8px 24px #0006;}
+  .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 16px;cursor:pointer;font:inherit;font-weight:600;transition:transform .12s ease,background .15s,box-shadow .15s;}
+  .btn:hover:not(:disabled){background:#3c3833;transform:translateY(-1px);}
+  .btn:active:not(:disabled){transform:translateY(0);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1411;font-weight:800;border:none;box-shadow:0 6px 18px #ff7a2f55,var(--glow);}
+  .btn.primary:hover:not(:disabled){box-shadow:0 10px 26px #ff7a2f77,var(--glow);}
   .btn.ghost{background:transparent;}
-  input{background:#1a1a1a;color:var(--txt);border:1px solid #555;border-radius:6px;padding:6px 8px;font:inherit;}
+  input{background:#1a1816;color:var(--txt);border:1px solid #4a463f;border-radius:8px;padding:8px 10px;font:inherit;transition:border-color .15s,box-shadow .15s;}
+  input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px #ff7a2f33;}
   input.short{width:70px;}
-  .view{padding:18px;max-width:1080px;margin:0 auto;}
+  .view{padding:22px 18px;max-width:1080px;margin:0 auto;}
   .muted{color:var(--muted);} .me{color:var(--accent);font-weight:700;}
-  .avatar{width:22px;height:22px;border-radius:50%;background:var(--accent);display:inline-block;}
+  .avatar{width:26px;height:26px;border-radius:50%;flex:none;overflow:hidden;position:relative;
+          background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 0 0 2px #0003;
+          display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;}
+  .avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+  .avatar i{font-style:normal;font-weight:800;font-size:12px;color:#1a1411;}
+  .avatar.lg{width:44px;height:44px;} .avatar.lg i{font-size:18px;}
 
   .boardWrap{position:relative;width:min(76vw,560px);aspect-ratio:1;}
   #board{width:100%;height:100%;display:grid;grid-template-columns:repeat(8,1fr);
@@ -70,7 +86,7 @@
     <span class="pill" id="onlinePill">online: ?</span>
     <button class="btn ghost" id="muteBtn" title="Sound" aria-label="Toggle sound" style="padding:4px 8px">🔊</button>
     <div id="profileMenu" style="position:relative">
-      <span class="navlink" id="profileToggle"><span class="avatar"></span> <span id="barName">—</span> ▾</span>
+      <span class="navlink" id="profileToggle"><span class="avatar" id="barAvatar"></span> <span id="barName">—</span> ▾</span>
       <div class="panel hidden" id="profileDropdown" style="position:absolute;right:0;top:30px;width:300px;z-index:20;box-shadow:var(--shadow)"></div>
     </div>
   </div>
@@ -2120,9 +2136,16 @@ document.querySelectorAll('.navlink[data-view]').forEach(n =>
 // ===== auth =====
 function api(path,opts){ return fetch(path,Object.assign({credentials:'include'},opts,
   {headers:Object.assign({},(opts&&opts.headers)||{})})); }
+function avatarInner(url,name){
+  const init=esc((name||'?').trim().charAt(0).toUpperCase()||'?');
+  return url ? `<img src="${esc(url)}" referrerpolicy="no-referrer" alt="" onerror="this.remove()"><i>${init}</i>`
+             : `<i>${init}</i>`;
+}
+function avatarHTML(url,name,cls){ return `<span class="avatar ${cls||''}">${avatarInner(url,name)}</span>`; }
 function setIdentity(o){
-  state.me={uid:o.uid,name:o.display_name||o.name,email:o.email||'',ratings:o.ratings||null};
+  state.me={uid:o.uid,name:o.display_name||o.name,email:o.email||'',avatar:o.avatar_url||'',ratings:o.ratings||null};
   $('#barName').textContent=state.me.name;
+  const a=$('#barAvatar'); if(a) a.innerHTML=avatarInner(state.me.avatar,state.me.name);
 }
 function renderLanding(){
   $('#view-landing').innerHTML=`
@@ -2404,7 +2427,7 @@ function renderGame(){
 }
 function playerCard(name,who,color){
   return `<div class="panel" style="display:flex;align-items:center;gap:8px;padding:8px 12px">
-    <span class="avatar"></span><b>${esc(name||'—')}</b>
+    ${avatarHTML(who==='me'&&state.me?state.me.avatar:'',name)}<b>${esc(name||'—')}</b>
     <span class="spacer"></span>
     <span class="clock" id="clk-${color}">—</span></div>`;
 }
@@ -2509,7 +2532,8 @@ function renderProfileDropdown(){
     return `<div class="panel" style="padding:8px;text-align:center"><div class="muted" style="font-size:10px">${k.toUpperCase()}</div>
       <div class="me" style="font-size:20px">${x?x.rating:'—'}</div><div class="muted" style="font-size:10px">${x?x.games_played+'g':''}</div></div>`;};
   $('#profileDropdown').innerHTML=`
-    <div style="display:flex;align-items:center;gap:6px">
+    <div style="display:flex;align-items:center;gap:10px">
+      ${avatarHTML(state.me.avatar,state.me.name,'lg')}
       <b id="nameDisplay">${esc(state.me.name)}</b>
       <button class="btn ghost" id="editNameBtn" style="padding:2px 6px;font-size:12px">edit</button></div>
     <div class="muted" style="font-size:11px">${esc(state.me.email||state.me.uid)}</div>

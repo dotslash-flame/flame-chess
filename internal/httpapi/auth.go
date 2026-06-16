@@ -77,6 +77,7 @@ func meBody(me store.Me) map[string]any {
 		"uid":          me.User.ID,
 		"email":        me.User.Email,
 		"display_name": me.User.DisplayName,
+		"avatar_url":   me.User.AvatarURL,
 		"ratings":      ratings,
 	}
 }
