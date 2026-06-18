@@ -28,6 +28,12 @@
   .spacer{margin-left:auto;}
   .pill{padding:3px 11px;border-radius:20px;background:#0005;border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:500;}
   .pill.ok{color:var(--ok);} .pill.warn{color:var(--warn);} .pill.bad{color:var(--bad);}
+  .chatlist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;margin:8px 0 0;padding-right:2px;}
+  .chatrow{display:flex;flex-direction:column;max-width:88%;align-self:flex-start;}
+  .chatrow.mine{align-self:flex-end;align-items:flex-end;}
+  .chatfrom{font-size:10px;color:var(--muted);margin:0 0 1px 2px;}
+  .chatbubble{background:#0005;border:1px solid var(--line);border-radius:12px;padding:5px 10px;font-size:13px;line-height:1.35;word-break:break-word;}
+  .chatrow.mine .chatbubble{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1411;border:none;font-weight:600;}
   .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:var(--radius);padding:14px;
          box-shadow:0 1px 0 #ffffff0a inset,0 8px 24px #0006;}
   .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 16px;cursor:pointer;font:inherit;font-weight:600;transition:transform .12s ease,background .15s,box-shadow .15s;}
@@ -2169,6 +2175,14 @@ const state = {
          opp:null, lastMove:null, moves:[], over:false, drawFrom:null },
   lastDelta:null,
   onlineUsers:[], incoming:{}, pendingOut:null, linkToken:null,
+  // ---- Phase 7 extras ----
+  spectating:false,   // watching someone else's game (read-only)
+  chat:[],            // {from_name,text,ts,mine} for the current game; cleared on game.start
+  rematch:null,       // incoming {game_id,from_name} offer, or {game_id,sent:true} when we offered
+  liveGames:[],       // from games.live / GET /api/games/live
+  watchToken:null,    // game_id parsed from ?watch=, consumed once after WS open
+  reconnecting:false, // true while the socket is down and retrying
+  deliberateClose:false, // set on logout so the close handler doesn't reconnect
 };
 
 // ===== view router =====
@@ -2231,8 +2245,10 @@ async function devLogin(){
   }catch(e){$('#authMsg').textContent='login failed';}
 }
 async function boot(){
-  try{ const u=new URL(location.href); const c=u.searchParams.get('c');
-    if(c){ state.linkToken=c; u.searchParams.delete('c'); history.replaceState(null,'',u.pathname+u.search+u.hash); } }catch(_){}
+  try{ const u=new URL(location.href);
+    const c=u.searchParams.get('c'); if(c){ state.linkToken=c; u.searchParams.delete('c'); }
+    const w=u.searchParams.get('watch'); if(w){ state.watchToken=w; u.searchParams.delete('watch'); }
+    if(c||w) history.replaceState(null,'',u.pathname+u.search+u.hash); }catch(_){}
   try{ const r=await api('/api/me');
     if(r.ok){ setIdentity(await r.json()); enterApp(); return; } }catch(_){}
   $('#topbar').classList.add('hidden'); showView('landing');
@@ -2243,11 +2259,14 @@ function enterApp(){
 }
 async function logout(){
   try{ await api('/auth/logout',{method:'POST'});}catch(_){}
+  state.deliberateClose=true;
   if(state.ws){try{state.ws.close();}catch(_){}}
   state.ws=null; state.me=null;
   state.game={ id:null, color:null, fen:null, turn:'white', whiteMs:null, blackMs:null,
                opp:null, lastMove:null, moves:[], over:false, drawFrom:null };
   state.onlineUsers=[]; state.incoming={}; state.pendingOut=null; renderToasts();
+  state.spectating=false; state.chat=[]; state.rematch=null; state.liveGames=[]; state.reconnecting=false;
+  clearOpponentBanner(); hideReconnectBanner();
   stopClock();
   $('#topbar').classList.add('hidden'); showView('landing');
 }
@@ -2320,7 +2339,7 @@ function tryMove(from,to){
 // (no click handler, so the selection is no longer cleared by a trailing click).
 // Tap-to-move, tap-same-to-deselect, and drag-to-move all share this path.
 function onSquareDown(ev,sq){
-  if(!state.game.id||state.game.over) return;
+  if(!state.game.id||state.game.over||state.spectating) return;
   const pieces=fenToBoard(state.game.fen);
   const mine=isMine(pieces[sq]);
   const prevSel=sel;
@@ -2358,16 +2377,35 @@ function promptPromotion(cb){
 }
 
 // ===== websocket =====
+let reconnectAttempt=0, reconnectTimer=null;
 function connectWS(){
-  if(state.ws){try{state.ws.close();}catch(_){}}
+  state.deliberateClose=false;
+  if(state.ws){try{ state.ws.onclose=null; state.ws.close(); }catch(_){}}
   const proto=location.protocol==='https:'?'wss':'ws';
   const ws=new WebSocket(proto+'://'+location.host+'/ws'); state.ws=ws;
-  ws.onopen=()=>{ const b=$('#reconnBanner'); if(b)b.classList.add('hidden');
+  ws.onopen=()=>{
+    reconnectAttempt=0; state.reconnecting=false; hideReconnectBanner();
     const jb=$('#joinBtn'); if(jb)jb.disabled=false;
-    if(state.linkToken){ wsSend({type:'challenge.accept',token:state.linkToken}); state.linkToken=null; } };
-  ws.onclose=()=>{ showReconnectBanner(); setTimeout(()=>{ if(state.me) connectWS(); },1500); };
+    // One-shot post-open actions, all idempotent (token cleared after use).
+    if(state.linkToken){ wsSend({type:'challenge.accept',token:state.linkToken}); state.linkToken=null; }
+    if(state.watchToken){ wsSend({type:'spectate.join',game_id:state.watchToken}); state.watchToken=null; state.spectating=true; }
+    // If we were spectating when the socket dropped, re-join the same game (server
+    // re-attaches players automatically but not spectators).
+    else if(state.spectating && state.game.id){ wsSend({type:'spectate.join',game_id:state.game.id}); }
+  };
+  ws.onclose=()=>{ if(!state.me||state.deliberateClose) return; scheduleReconnect(); };
   ws.onerror=()=>{};
   ws.onmessage=ev=>handleWS(JSON.parse(ev.data));
+}
+// Capped exponential backoff with jitter: 0.5s → 1s → 2s → 5s (cap 5s).
+function scheduleReconnect(){
+  state.reconnecting=true; showReconnectBanner();
+  const steps=[500,1000,2000,5000];
+  const base=steps[Math.min(reconnectAttempt,steps.length-1)];
+  reconnectAttempt++;
+  const wait=base+Math.floor(base*0.3*Math.random());
+  clearTimeout(reconnectTimer);
+  reconnectTimer=setTimeout(()=>{ if(state.me&&!state.deliberateClose) connectWS(); }, wait);
 }
 function wsSend(o){ logEvent('out',o); if(state.ws&&state.ws.readyState===1) state.ws.send(JSON.stringify(o)); }
 function handleWS(m){
@@ -2384,12 +2422,25 @@ function handleWS(m){
     case 'challenge.created': if(state.pendingOut)state.pendingOut.token=m.token; renderToasts(); break;
     case 'challenge.declined': { const n=state.pendingOut&&state.pendingOut.name; state.pendingOut=null; renderToasts(); flashNotice((n||'They')+' declined'); } break;
     case 'challenge.gone': delete state.incoming[m.token]; renderToasts(); break;
+    // ---- Phase 7 ----
+    case 'opponent.disconnected': showOpponentBanner(m.grace_seconds); break;
+    case 'opponent.reconnected': clearOpponentBanner(); break;
+    case 'rematch.offered': onRematchOffered(m); break;
+    case 'rematch.declined': state.rematch=null; paintRematchArea(); flashNotice('Opponent declined the rematch'); break;
+    case 'chat.msg': onChatMsg(m); break;
+    case 'games.live': state.liveGames=m.games||[]; if(state.view==='lobby') renderLiveGames(); break;
     case 'pong': break;
     case 'error': handleChallengeError(m); break;
   }
 }
 const CHALLENGE_ERRORS={unknown_challenge:'That challenge is no longer available.',opponent_offline:"They're offline.",busy:'One of you is already in a game.',challenge_self:"You can't challenge yourself."};
+const PHASE7_ERRORS={unknown_game:'That game is no longer available.',rematch_unavailable:'Rematch no longer available.'};
 function handleChallengeError(m){
+  if(PHASE7_ERRORS[m.code]){
+    if(m.code==='rematch_unavailable'){ state.rematch=null; paintRematchArea(); }
+    if(m.code==='unknown_game'){ state.spectating=false; }
+    flashNotice(PHASE7_ERRORS[m.code]); return;
+  }
   if(CHALLENGE_ERRORS[m.code]){ state.pendingOut=null; renderToasts(); flashNotice(CHALLENGE_ERRORS[m.code]); return; }
   setQueueMsg('error: '+m.code+' — '+m.msg);
 }
@@ -2459,13 +2510,14 @@ function renderLobby(){
          <div class="muted" style="font-size:12px">${rc?rc.games_played+' games':''} ${deltaBadge(state.lastDelta)}</div></div>
        <div class="panel" id="onlinePanel"><div class="muted" style="font-size:11px">ONLINE</div><div class="muted">loading…</div></div>
        <div class="panel" id="lbPeek"><div class="muted" style="font-size:11px">TOP ${cat.toUpperCase()}</div><div class="muted">loading…</div></div>
+       <div class="panel" id="liveGamesPanel"><div class="muted" style="font-size:11px">WATCH LIVE GAMES</div><div class="muted">loading…</div></div>
        <div class="panel" id="recentPeek"><div class="muted" style="font-size:11px">RECENT</div><div class="muted">loading…</div></div>
      </div>
    </div>`;
   document.querySelectorAll('[data-tc]').forEach(b=>b.onclick=()=>{selectedTC=+b.dataset.tc;renderLobby();});
   $('#joinBtn').onclick=joinQueue; $('#leaveBtn').onclick=()=>{wsSend({type:'queue.leave'});searchUI(false);};
   $('#friendBtn').onclick=createFriendLink;
-  loadLbPeek(cat); loadRecentPeek(); renderOnlinePanel();
+  loadLbPeek(cat); loadRecentPeek(); renderOnlinePanel(); loadLiveGames();
 }
 function renderOnlinePanel(){
   const box=$('#onlinePanel'); if(!box)return;
@@ -2532,11 +2584,17 @@ function swing(g){ const d=g.rating_after-g.rating_before; return d>0?'+'+d:d<0?
 
 // ===== game =====
 function onGameStart(m){
+  const spec = m.color==='spectator';
+  state.spectating = spec;
+  state.chat=[]; state.rematch=null; clearOpponentBanner();
+  $('#overlayRoot').innerHTML=''; // clear any game-over / rematch overlay (e.g. accepted rematch)
   const baseSec=(m.clocks.white_ms||0)/1000;
   const cat=baseSec<180?'bullet':baseSec<600?'blitz':'rapid';
-  state.game={ id:m.game_id, color:m.color, fen:m.fen, turn:'white',
-    whiteMs:m.clocks.white_ms, blackMs:m.clocks.black_ms, opp:m.opponent, cat, base:baseSec,
-    lastMove:null, moves:[], over:false, drawFrom:null };
+  // Spectators view from white's POV; players from their own color.
+  const color = spec ? 'white' : m.color;
+  state.game={ id:m.game_id, color, fen:m.fen, turn:'white',
+    whiteMs:m.clocks.white_ms, blackMs:m.clocks.black_ms, opp:spec?null:m.opponent, cat, base:baseSec,
+    white:m.white, black:m.black, lastMove:null, moves:[], over:false, drawFrom:null };
   lowWarned={white:false,black:false};
   searchUI(false); showView('game'); renderGame(); startClock(); playSound('start');
 }
@@ -2557,19 +2615,17 @@ function pushMove(prevFen,uci){ if(!uci)return; let san=uci;
 function doMove(uci){ if(!state.game.id||state.game.over)return;
   wsSend({type:'move',game_id:state.game.id,uci}); }
 function renderGame(){
-  const g=state.game; const flipTop = g.color==='white'?'black':'white';
-  $('#view-game').innerHTML=`
-   <div style="display:grid;grid-template-columns:auto 280px;gap:16px;align-items:start;justify-content:center">
-     <div>
-       ${playerCard(g.opp,'opp',flipTop)}
-       <div class="boardWrap" style="margin:8px 0"><div id="board"></div></div>
-       ${playerCard(state.me?state.me.name:'You','you',g.color)}
-     </div>
-     <div class="panel" style="min-height:300px;display:flex;flex-direction:column">
-       <div class="muted" style="font-size:11px">MOVES</div>
-       <div id="moveList" style="flex:1;overflow:auto;font:12px ui-monospace,monospace;margin:6px 0"></div>
-       <div class="muted" id="lastMoveLbl" style="font-size:12px;margin-bottom:8px"></div>
-       <div style="display:flex;gap:6px">
+  const g=state.game; const spec=state.spectating;
+  const flipTop = g.color==='white'?'black':'white';
+  // Names: spectators show the two players; players show opponent (top) and self (bottom).
+  const topName = spec ? (g.color==='white'?g.black:g.white) : g.opp;
+  const botName = spec ? (g.color==='white'?g.white:g.black) : (state.me?state.me.name:'You');
+  const controls = spec
+    ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+         <span class="pill warn">Spectating</span>
+         <button class="btn" id="stopWatchBtn" style="margin-left:auto">Stop watching</button>
+       </div>`
+    : `<div style="display:flex;gap:6px">
          <button class="btn" id="resignBtn">Resign</button>
          <button class="btn" id="drawBtn">Offer draw</button>
        </div>
@@ -2577,17 +2633,43 @@ function renderGame(){
          <span class="pill warn">draw offered</span>
          <button class="btn" id="drawYes">Accept</button>
          <button class="btn" id="drawNo">Decline</button>
+       </div>`;
+  $('#view-game').innerHTML=`
+   <div style="display:grid;grid-template-columns:auto 280px;gap:16px;align-items:start;justify-content:center">
+     <div>
+       ${playerCard(topName,'opp',flipTop)}
+       <div class="boardWrap" style="margin:8px 0"><div id="board"></div></div>
+       ${playerCard(botName,spec?'opp':'you',g.color)}
+     </div>
+     <div style="display:flex;flex-direction:column;gap:12px">
+       <div class="panel" style="min-height:240px;display:flex;flex-direction:column">
+         <div class="muted" style="font-size:11px">MOVES</div>
+         <div id="moveList" style="flex:1;overflow:auto;font:12px ui-monospace,monospace;margin:6px 0"></div>
+         <div class="muted" id="lastMoveLbl" style="font-size:12px;margin-bottom:8px"></div>
+         ${controls}
        </div>
+       ${chatPanelHtml()}
      </div>
    </div>`;
-  renderBoard(); renderMoveList(); paintClocks();
-  $('#resignBtn').onclick=()=>state.game.id&&wsSend({type:'resign',game_id:state.game.id});
-  $('#drawBtn').onclick=()=>state.game.id&&wsSend({type:'draw.offer',game_id:state.game.id});
-  $('#drawYes').onclick=()=>{wsSend({type:'draw.respond',game_id:state.game.id,accept:true});state.game.drawFrom=null;renderGame();};
-  $('#drawNo').onclick=()=>{wsSend({type:'draw.respond',game_id:state.game.id,accept:false});state.game.drawFrom=null;renderGame();};
-  $('#drawOffer').classList.toggle('hidden', !state.game.drawFrom || state.game.over);
-  const dis=state.game.over; ['resignBtn','drawBtn'].forEach(id=>{const b=$('#'+id);if(b)b.disabled=dis;});
+  renderBoard(); renderMoveList(); paintClocks(); renderChat();
+  if(spec){
+    $('#stopWatchBtn').onclick=stopWatching;
+  } else {
+    $('#resignBtn').onclick=()=>state.game.id&&wsSend({type:'resign',game_id:state.game.id});
+    $('#drawBtn').onclick=()=>state.game.id&&wsSend({type:'draw.offer',game_id:state.game.id});
+    $('#drawYes').onclick=()=>{wsSend({type:'draw.respond',game_id:state.game.id,accept:true});state.game.drawFrom=null;renderGame();};
+    $('#drawNo').onclick=()=>{wsSend({type:'draw.respond',game_id:state.game.id,accept:false});state.game.drawFrom=null;renderGame();};
+    $('#drawOffer').classList.toggle('hidden', !state.game.drawFrom || state.game.over);
+    const dis=state.game.over; ['resignBtn','drawBtn'].forEach(id=>{const b=$('#'+id);if(b)b.disabled=dis;});
+  }
+  wireChat();
   renderDrawPopup();
+}
+function stopWatching(){
+  wsSend({type:'spectate.leave'});
+  state.spectating=false; state.game.over=true; stopClock();
+  $('#overlayRoot').innerHTML=''; clearOpponentBanner();
+  showView('lobby');
 }
 function drawPopupRoot(){ let r=$('#drawPopup'); if(!r){ r=el('div'); r.id='drawPopup';
   r.style.cssText='position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:62;width:calc(100% - 28px);max-width:320px'; document.body.appendChild(r);} return r; }
@@ -2647,6 +2729,90 @@ function renderMoveList(){ const box=$('#moveList'); if(!box)return;
   box.innerHTML=html||'<span class="muted">—</span>'; box.scrollTop=box.scrollHeight;
   const lm=state.game.moves[state.game.moves.length-1];
   const lbl=$('#lastMoveLbl'); if(lbl) lbl.innerHTML = lm?('last: <b>'+esc(lm)+'</b>'):''; }
+
+// ===== chat (Phase 7) =====
+function chatPanelHtml(){
+  const spec=state.spectating;
+  return `<div class="panel" id="chatPanel" style="display:flex;flex-direction:column;min-height:170px;max-height:260px">
+     <div class="muted" style="font-size:11px">CHAT${spec?' · read-only':''}</div>
+     <div id="chatList" class="chatlist"></div>
+     ${spec?'':`<div style="display:flex;gap:6px;margin-top:6px">
+        <input id="chatInput" maxlength="500" placeholder="Say something…" style="flex:1">
+        <button class="btn" id="chatSend">Send</button>
+       </div>`}
+   </div>`;
+}
+function renderChat(){
+  const list=$('#chatList'); if(!list) return;
+  list.innerHTML = state.chat.length ? state.chat.map(c=>
+    `<div class="chatrow ${c.mine?'mine':''}">
+       ${c.mine?'':`<span class="chatfrom">${esc(c.from_name||'?')}</span>`}
+       <span class="chatbubble">${esc(c.text)}</span>
+     </div>`).join('') : '<div class="muted" style="font-size:12px">No messages yet</div>';
+  list.scrollTop=list.scrollHeight;
+}
+function wireChat(){
+  const inp=$('#chatInput'), btn=$('#chatSend'); if(!inp||!btn) return;
+  const send=()=>{ const text=inp.value.trim(); if(!text||!state.game.id) return;
+    wsSend({type:'chat.send',game_id:state.game.id,text:text.slice(0,500)}); inp.value=''; };
+  btn.onclick=send;
+  inp.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } };
+}
+function onChatMsg(m){
+  const me=state.me&&state.me.uid;
+  state.chat.push({from_name:m.from_name,text:m.text,ts:m.ts,mine:m.from===me});
+  renderChat();
+}
+// Replay/history: load a finished game's stored messages. No history view exists yet —
+// this helper is wired for the Phase 8 replay view to call.
+async function loadGameMessages(gameId){
+  try{ const r=await api('/api/games/'+encodeURIComponent(gameId)); if(!r.ok) return [];
+    const d=await r.json(); const me=state.me&&state.me.uid;
+    return (d.messages||[]).map(x=>({from_name:x.sender_name,text:x.body,ts:x.ts,mine:x.sender_id===me}));
+  }catch(_){ return []; }
+}
+
+// ===== rematch (Phase 7) =====
+function onRematchOffered(m){
+  state.rematch={game_id:m.game_id, from_name:m.from_name};
+  // If the game-over overlay is up, surface Accept/Decline inline; otherwise toast it.
+  if($('#rematchArea')) paintRematchArea();
+  else flashNotice((m.from_name||'Opponent')+' wants a rematch');
+}
+function paintRematchArea(){
+  const a=$('#rematchArea'); if(!a) return;
+  if(state.spectating){ a.innerHTML=''; return; }
+  const rm=state.rematch;
+  if(rm && rm.sent){ a.innerHTML='<button class="btn" disabled style="width:100%">Waiting for opponent…</button>'; return; }
+  if(rm && rm.from_name){
+    a.innerHTML=`<div class="muted" style="font-size:12px;margin-bottom:6px"><b>${esc(rm.from_name)}</b> wants a rematch</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn primary" id="rmAccept" style="flex:1">Accept</button>
+        <button class="btn" id="rmDecline" style="flex:1">Decline</button></div>`;
+    $('#rmAccept').onclick=()=>{ wsSend({type:'rematch.respond',game_id:rm.game_id,accept:true}); state.rematch=null; paintRematchArea(); };
+    $('#rmDecline').onclick=()=>{ wsSend({type:'rematch.respond',game_id:rm.game_id,accept:false}); state.rematch=null; paintRematchArea(); };
+    return;
+  }
+  a.innerHTML='<button class="btn primary" id="rmOffer" style="width:100%">Rematch ↻</button>';
+  $('#rmOffer').onclick=()=>{ wsSend({type:'rematch.offer',game_id:state.game.id}); state.rematch={game_id:state.game.id,sent:true}; paintRematchArea(); };
+}
+
+// ===== spectating: live games list (Phase 7) =====
+async function loadLiveGames(){
+  try{ const r=await api('/api/games/live'); if(r.ok){ const d=await r.json(); state.liveGames=d.games||[]; } }catch(_){}
+  renderLiveGames();
+}
+function renderLiveGames(){
+  const box=$('#liveGamesPanel'); if(!box) return;
+  const games=state.liveGames||[];
+  box.innerHTML='<div class="muted" style="font-size:11px">WATCH LIVE GAMES</div>'+
+    (games.length?games.map(g=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px">
+      <span style="min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.white||'?')} vs ${esc(g.black||'?')}</span>
+        <span class="muted" style="font-size:11px">${esc(g.category||'')} ${fmtTC(g.base,g.increment)}</span></span>
+      <button class="btn" data-watch="${esc(g.game_id)}" style="padding:4px 10px;flex:none">Watch</button></div>`).join('')
+     :'<div class="muted" style="margin-top:6px">no live games</div>');
+  box.querySelectorAll('[data-watch]').forEach(b=>b.onclick=()=>{ wsSend({type:'spectate.join',game_id:b.dataset.watch}); state.spectating=true; });
+}
 
 // ===== clocks =====
 let clockTimer=null,lastTick=null;
@@ -2735,7 +2901,19 @@ refreshMuteBtn();
 
 // ===== game over =====
 function onGameOver(m){
-  state.game.over=true; stopClock(); state.game.drawFrom=null; renderDrawPopup(); playSound(m.reason==='checkmate'?'mate':'over');
+  state.game.over=true; stopClock(); state.game.drawFrom=null; renderDrawPopup(); clearOpponentBanner();
+  if(state.spectating){
+    playSound('over');
+    const res=m.result==='1-0'?'White wins':m.result==='0-1'?'Black wins':'Draw';
+    $('#overlayRoot').innerHTML=`<div class="ovl"><div class="panel" style="text-align:center;min-width:300px">
+      <h2 style="margin:6px 0 2px">${res}</h2>
+      <div class="muted">${esc(m.reason||'')}</div>
+      <div style="margin-top:16px"><button class="btn primary" id="ovlLobby">Back to lobby</button></div></div></div>`;
+    $('#ovlLobby').onclick=()=>{ $('#overlayRoot').innerHTML=''; stopWatching(); };
+    renderGame();
+    return;
+  }
+  playSound(m.reason==='checkmate'?'mate':'over');
   let deltaHtml='';
   if(m.ratings && state.game.color){ const r=m.ratings[state.game.color];
     if(r){ state.lastDelta=r.delta;
@@ -2754,10 +2932,12 @@ function onGameOver(m){
     <h2 style="margin:6px 0 2px">${title}</h2>
     <div class="muted">vs ${esc(state.game.opp||'opponent')} · ${esc(m.reason)}</div>
     ${deltaHtml}
-    <div style="display:flex;gap:8px;justify-content:center;margin-top:16px">
+    <div id="rematchArea" style="margin-top:14px"></div>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:12px">
       <button class="btn primary" id="ovlNew">New game ▸</button>
       <button class="btn" id="ovlLobby">Back to lobby</button>
     </div></div></div>`;
+  paintRematchArea();
   $('#ovlNew').onclick=()=>{ $('#overlayRoot').innerHTML=''; showView('lobby');
     const inc=(TIME_CONTROLS.find(t=>t.base===state.game.base)||{}).inc||0;
     wsSend({type:'queue.join',category:state.game.cat,base:state.game.base,increment:inc}); searchUI(true); };
@@ -2852,7 +3032,21 @@ function renderDevLog(){ $('#devPanel').innerHTML='<div class="muted" style="fon
 // ===== reconnect banner =====
 function showReconnectBanner(){ let b=$('#reconnBanner');
   if(!b){ b=el('div'); b.id='reconnBanner'; b.style.cssText='position:fixed;top:0;left:0;right:0;background:var(--warn);color:#1a1a1a;text-align:center;padding:4px;z-index:60;font-weight:600'; document.body.appendChild(b);}
-  b.textContent='connection lost — reconnecting…'; b.classList.remove('hidden'); }
+  b.textContent='Reconnecting…'; b.classList.remove('hidden'); b.style.display='block'; }
+function hideReconnectBanner(){ const b=$('#reconnBanner'); if(b)b.classList.add('hidden'); }
+
+// ===== opponent-disconnect banner (pure UI; clock keeps ticking server-side) =====
+let oppBannerTimer=null;
+function showOpponentBanner(grace){
+  let b=$('#oppBanner');
+  if(!b){ b=el('div'); b.id='oppBanner'; b.style.cssText='position:fixed;top:0;left:0;right:0;background:#3a2415;color:var(--accent2);text-align:center;padding:5px;z-index:59;font-weight:600;border-bottom:1px solid var(--warn)'; document.body.appendChild(b);}
+  let n=Math.max(0,grace|0);
+  const paint=()=>{ b.textContent='Opponent disconnected — '+n+'s to reconnect'; };
+  paint(); b.style.display='block';
+  clearInterval(oppBannerTimer);
+  oppBannerTimer=setInterval(()=>{ n--; if(n<=0){ clearOpponentBanner(); return; } paint(); },1000);
+}
+function clearOpponentBanner(){ clearInterval(oppBannerTimer); oppBannerTimer=null; const b=$('#oppBanner'); if(b)b.style.display='none'; }
 
 boot();
 </script>
