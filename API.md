@@ -5,7 +5,7 @@ INSERT GARBAGE BELOW
 
 # FlameChess — API Contract
 
-**Status:** Phase 5 (persistence & ratings). Finished games are persisted, per-category Elo ratings are maintained, and a leaderboard + game history are served.
+**Status:** Phase 7 (extras). Adds reconnect/abandon grace, rematch, in-game chat (persisted), and spectating (watch-by-link + live-games lobby) on top of Phase 5 persistence/ratings and Phase 6 challenges.
 **Source of truth:** generated from `internal/wire/wire.go` + `internal/httpapi/router.go` + `internal/httpapi/auth.go` + `internal/ws/ws.go`.
 
 This is the contract a frontend / test client builds against. Sections marked **[live]** are implemented and stable now. Sections marked **[deferred]** are from the design spec (§6) but **not** served yet — do not build against them.
@@ -126,7 +126,32 @@ The caller's own finished-game history, newest first. Cookie-authenticated.
   ```
 - **`401`** if unauthenticated.
 
-> **[deferred]** `GET /api/games/{id}` (single-game detail) — Phase 6+.
+### `GET /api/games/{id}` **[Phase 7 — live]**
+
+Single-game detail plus its persisted chat (also the basis for replay later). Cookie-authenticated. Works for active and finished games.
+
+- **`200`** with JSON:
+  ```json
+  {
+    "game": {
+      "id": "game-uuid", "white_id": "...", "black_id": "...",
+      "category": "blitz", "status": "finished", "result": "1-0",
+      "reason": "checkmate", "pgn": "1. e4 e5 ...",
+      "started_at": "2026-06-18T12:00:00Z", "ended_at": "2026-06-18T12:09:00Z"
+    },
+    "messages": [
+      { "sender_id": "...", "sender_name": "Alice", "body": "gg", "ts": 1718712000000 }
+    ]
+  }
+  ```
+  `ts` is unix **milliseconds**. `messages` is ordered oldest-first.
+- **`404`** unknown id. **`401`** if unauthenticated.
+
+### `GET /api/games/live` **[Phase 7 — live]**
+
+The live-games lobby list (for initial load / refresh without waiting for the next `games.live` broadcast). Cookie-authenticated.
+
+- **`200`** with JSON `{ "games": [{ "game_id": "...", "white": "Alice", "black": "Bob", "category": "blitz", "base": 300, "increment": 0 }] }`. **`401`** if unauthenticated.
 
 ---
 
@@ -173,6 +198,11 @@ The server only ever emits authoritative state (real FEN + real clock ms). The c
 | `challenge.accept` | `token` (string) | **[Phase 6]** Accept a challenge (direct or link). On success a `game.start` arrives for both players. Token is single-use. |
 | `challenge.decline` | `token` (string) | **[Phase 6]** Decline a direct challenge you received; the creator gets `challenge.declined`. |
 | `challenge.cancel` | `token` (string) | **[Phase 6]** Cancel a challenge you created; a direct target gets `challenge.gone`. |
+| `rematch.offer` | `game_id` (string, the just-finished game) | **[Phase 7]** Offer a rematch to your opponent from the finished game. If they already offered, the rematch starts immediately. Offers expire after `REMATCH_TTL_SECONDS` (default 60). |
+| `rematch.respond` | `game_id` (string), `accept` (bool) | **[Phase 7]** Respond to a `rematch.offered`. Accept → a `game.start` arrives for both with **swapped colors**; decline → offerer gets `rematch.declined`. |
+| `chat.send` | `game_id` (string), `text` (string) | **[Phase 7]** Send an in-game chat message. **Players only** (spectators are read-only). Empty/whitespace dropped; capped at 500 runes (truncated). Relayed to both players + spectators as `chat.msg` and persisted. |
+| `spectate.join` | `game_id` (string) | **[Phase 7]** Start watching a live game. Server replies with a `game.start` snapshot (`color:"spectator"`) then live `game.state`/`game.over`/`chat.msg`. |
+| `spectate.leave` | — | **[Phase 7]** Stop watching the current game. |
 
 Example:
 
@@ -199,11 +229,19 @@ Example:
 | `challenge.created` | `token`, `url` (empty for direct) | **[Phase 6]** Ack that your challenge was registered. |
 | `challenge.declined` | `token` | **[Phase 6]** Your direct challenge was declined (or the target went offline). |
 | `challenge.gone` | `token` | **[Phase 6]** A challenge you received was withdrawn (creator cancelled or disconnected). Remove its prompt. |
+| `opponent.disconnected` | `color` (`"white"`/`"black"`), `grace_seconds` (int) | **[Phase 7]** Your opponent dropped. Their clock **keeps running**; if they don't return within `grace_seconds` the game ends `abandoned`. Also sent to spectators. |
+| `opponent.reconnected` | `color` | **[Phase 7]** The dropped player came back; play continues. Also sent to spectators. |
+| `rematch.offered` | `game_id`, `from` (uid), `from_name` | **[Phase 7]** Your opponent offered a rematch on the finished game. Show an Accept/Decline prompt. |
+| `rematch.declined` | `game_id` | **[Phase 7]** Your rematch offer was declined, or the other player left / entered another game. Clear the prompt. |
+| `chat.msg` | `game_id`, `from` (uid), `from_name`, `text`, `ts` (unix millis) | **[Phase 7]** A chat message in your game. Delivered to both players and all spectators. |
+| `games.live` | `games` (array of `{game_id, white, black, category, base, increment}`) | **[Phase 7]** The live-games lobby. Sent to a connection on register, and broadcast to everyone when a game starts or ends. |
 | `pong` | — | Reply to `ping`. |
 | `error` | `code`, `msg` | A request was rejected; game state is untouched. |
 
+**Reconnect & spectator snapshots reuse `game.start`.** On reconnect, the rejoining player gets a `game.start` with their real `color` (plus live `clocks`) followed by the current `game.state`. A spectator's join snapshot is a `game.start` with `color:"spectator"` carrying both player names in extra `white`/`black` fields, followed by the current `game.state`.
+
 `game.over.reason` is one of:
-`checkmate`, `stalemate`, `insufficient`, `threefold`, `fifty_move`, `resign`, `draw_agreed`, `timeout`.
+`checkmate`, `stalemate`, `insufficient`, `threefold`, `fifty_move`, `resign`, `draw_agreed`, `timeout`, `abandoned` (**[Phase 7]** opponent disconnected past the grace window).
 
 The optional `ratings` block (rated games only) carries the Elo change for both colors; each client reads its own color (known from `game.start`):
 
@@ -248,13 +286,15 @@ Example:
 | `challenge_self` | **[Phase 6]** You tried to challenge or accept your own challenge. |
 | `busy` | **[Phase 6]** One of the two players is already in a game. |
 | `opponent_offline` | **[Phase 6]** The challenge target (or creator, at accept time) is not connected. |
+| `unknown_game` | **[Phase 7]** Also used by `spectate.join` when the game isn't live (or you're a player in it). |
+| `rematch_unavailable` | **[Phase 7]** The rematch slot expired, doesn't exist, the other player is offline, or there's nothing to respond to. |
 
 ---
 
 ## Behavior the client must handle (Phase 3)
 
 - **Single active socket per user.** A second `/ws` connection for the same `uid` closes the older one (newest wins). `online.count` is unchanged across the swap.
-- **Disconnect mid-game does NOT end the game.** The clock keeps running; you lose on the flag (`game.over` with `reason: "timeout"`). No reconnect grace yet (Phase 7).
+- **Disconnect mid-game does NOT end the game.** The clock keeps running. **[Phase 7]** the opponent gets `opponent.disconnected {grace_seconds}`; if you reconnect within the grace window (`RECONNECT_GRACE_SECONDS`, default 30) your new socket re-attaches and gets a `game.start`+`game.state` snapshot, and the opponent gets `opponent.reconnected`. Otherwise the game ends `abandoned` (you lose). You can still also lose on the flag (`reason: "timeout"`) if the clock runs out first.
 - **Clocks are wall-clock authoritative.** Trust `white_ms`/`black_ms` from `game.state`; don't compute results client-side.
 - **One game per user at a time** in the quick-match flow.
 
@@ -262,8 +302,7 @@ Example:
 
 ## Not yet live (don't build against these yet)
 
-- `rematch.offer` / `rematch.respond` / `rematch.offered`, in-game `chat`, spectating, reconnect-resume (Phase 7).
-- `GET /api/games/{id}` single-game detail.
+- Full move-by-move **replay** UI (Phase 8). The data is available now via `GET /api/games/{id}` (PGN + chat).
 
 ---
 

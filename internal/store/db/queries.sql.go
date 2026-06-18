@@ -91,6 +91,74 @@ func (q *Queries) FinishGame(ctx context.Context, arg FinishGameParams) error {
 	return err
 }
 
+const gameByID = `-- name: GameByID :one
+SELECT id, white_id, black_id, category, base_seconds, increment_sec, status, result, result_reason, pgn, white_rating_before, white_rating_after, black_rating_before, black_rating_after, started_at, ended_at FROM games WHERE id = $1
+`
+
+func (q *Queries) GameByID(ctx context.Context, id string) (Game, error) {
+	row := q.db.QueryRow(ctx, gameByID, id)
+	var i Game
+	err := row.Scan(
+		&i.ID,
+		&i.WhiteID,
+		&i.BlackID,
+		&i.Category,
+		&i.BaseSeconds,
+		&i.IncrementSec,
+		&i.Status,
+		&i.Result,
+		&i.ResultReason,
+		&i.Pgn,
+		&i.WhiteRatingBefore,
+		&i.WhiteRatingAfter,
+		&i.BlackRatingBefore,
+		&i.BlackRatingAfter,
+		&i.StartedAt,
+		&i.EndedAt,
+	)
+	return i, err
+}
+
+const gameMessages = `-- name: GameMessages :many
+SELECT m.body, m.created_at, u.display_name AS sender_name, m.sender_id
+FROM game_messages m
+JOIN users u ON u.id = m.sender_id
+WHERE m.game_id = $1
+ORDER BY m.created_at
+`
+
+type GameMessagesRow struct {
+	Body       string
+	CreatedAt  pgtype.Timestamptz
+	SenderName string
+	SenderID   string
+}
+
+func (q *Queries) GameMessages(ctx context.Context, gameID string) ([]GameMessagesRow, error) {
+	rows, err := q.db.Query(ctx, gameMessages, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GameMessagesRow
+	for rows.Next() {
+		var i GameMessagesRow
+		if err := rows.Scan(
+			&i.Body,
+			&i.CreatedAt,
+			&i.SenderName,
+			&i.SenderID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const gamesForUser = `-- name: GamesForUser :many
 SELECT id, white_id, black_id, category, base_seconds, increment_sec, status, result, result_reason, pgn, white_rating_before, white_rating_after, black_rating_before, black_rating_after, started_at, ended_at
 FROM games
@@ -207,6 +275,30 @@ func (q *Queries) InsertActiveGame(ctx context.Context, arg InsertActiveGamePara
 	var id string
 	err := row.Scan(&id)
 	return id, err
+}
+
+const insertGameMessage = `-- name: InsertGameMessage :one
+INSERT INTO game_messages (game_id, sender_id, body)
+VALUES ($1, $2, $3)
+RETURNING id, created_at
+`
+
+type InsertGameMessageParams struct {
+	GameID   string
+	SenderID string
+	Body     string
+}
+
+type InsertGameMessageRow struct {
+	ID        int64
+	CreatedAt pgtype.Timestamptz
+}
+
+func (q *Queries) InsertGameMessage(ctx context.Context, arg InsertGameMessageParams) (InsertGameMessageRow, error) {
+	row := q.db.QueryRow(ctx, insertGameMessage, arg.GameID, arg.SenderID, arg.Body)
+	var i InsertGameMessageRow
+	err := row.Scan(&i.ID, &i.CreatedAt)
+	return i, err
 }
 
 const leaderboard = `-- name: Leaderboard :many

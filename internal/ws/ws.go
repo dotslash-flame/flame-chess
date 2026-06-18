@@ -28,6 +28,10 @@ type Router interface {
 	AcceptChallenge(userID, token string)
 	DeclineChallenge(userID, token string)
 	CancelChallenge(userID, token string)
+	OfferRematch(userID, gameID string)
+	RespondRematch(userID, gameID string, accept bool)
+	SpectateJoin(userID, gameID string)
+	SpectateLeave(userID string)
 }
 
 type Conn struct {
@@ -170,6 +174,36 @@ func (c *Conn) dispatch(raw []byte) {
 			return
 		}
 		c.router.CancelChallenge(c.id.UserID, m.Token)
+	case wire.TypeRematchOffer:
+		var m wire.RematchOffer
+		if json.Unmarshal(raw, &m) != nil {
+			c.Send(wire.NewError(wire.CodeBadMessage, "bad rematch.offer"))
+			return
+		}
+		c.router.OfferRematch(c.id.UserID, m.GameID)
+	case wire.TypeRematchRespond:
+		var m wire.RematchRespond
+		if json.Unmarshal(raw, &m) != nil {
+			c.Send(wire.NewError(wire.CodeBadMessage, "bad rematch.respond"))
+			return
+		}
+		c.router.RespondRematch(c.id.UserID, m.GameID, m.Accept)
+	case wire.TypeChatSend:
+		var m wire.ChatSend
+		if json.Unmarshal(raw, &m) != nil {
+			c.Send(wire.NewError(wire.CodeBadMessage, "bad chat.send"))
+			return
+		}
+		c.router.Route(c.id.UserID, hub.GameAction{GameID: m.GameID, Kind: "chat", Text: m.Text})
+	case wire.TypeSpectateJoin:
+		var m wire.SpectateJoin
+		if json.Unmarshal(raw, &m) != nil {
+			c.Send(wire.NewError(wire.CodeBadMessage, "bad spectate.join"))
+			return
+		}
+		c.router.SpectateJoin(c.id.UserID, m.GameID)
+	case wire.TypeSpectateLeave:
+		c.router.SpectateLeave(c.id.UserID)
 	case wire.TypePing:
 		c.Send(wire.NewPong())
 	default:

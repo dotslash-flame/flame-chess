@@ -13,10 +13,13 @@ type Querier interface {
 	// Seed the three category rows at the default rating if absent.
 	EnsureRatings(ctx context.Context, userID string) error
 	FinishGame(ctx context.Context, arg FinishGameParams) error
+	GameByID(ctx context.Context, id string) (Game, error)
+	GameMessages(ctx context.Context, gameID string) ([]GameMessagesRow, error)
 	GamesForUser(ctx context.Context, arg GamesForUserParams) ([]Game, error)
 	GetRating(ctx context.Context, arg GetRatingParams) (GetRatingRow, error)
 	GetUser(ctx context.Context, id string) (User, error)
 	InsertActiveGame(ctx context.Context, arg InsertActiveGameParams) (string, error)
+	InsertGameMessage(ctx context.Context, arg InsertGameMessageParams) (InsertGameMessageRow, error)
 	Leaderboard(ctx context.Context, arg LeaderboardParams) ([]LeaderboardRow, error)
 	ListRatings(ctx context.Context, userID string) ([]ListRatingsRow, error)
 	UpdateDisplayName(ctx context.Context, arg UpdateDisplayNameParams) (User, error)

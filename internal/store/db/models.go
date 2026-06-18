@@ -27,6 +27,14 @@ type Game struct {
 	EndedAt           pgtype.Timestamptz
 }
 
+type GameMessage struct {
+	ID        int64
+	GameID    string
+	SenderID  string
+	Body      string
+	CreatedAt pgtype.Timestamptz
+}
+
 type Rating struct {
 	UserID      string
 	Category    string

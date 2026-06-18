@@ -1,12 +1,15 @@
 package game
 
 import (
+	"strings"
 	"time"
 
 	"github.com/notnil/chess"
 
 	"github.com/dotslash-flame/flame-chess/internal/wire"
 )
+
+const maxChatRunes = 500
 
 // 1 actor = 1 live game
 //
@@ -22,10 +25,18 @@ type Actor struct {
 	timer *time.Timer
 	onEnd func(gameID string)
 	rec   Recorder
+	chat  ChatRecorder
 
 	hasOffer  bool
 	offeredBy chess.Color
 	finished  bool
+
+	graceSecs    int
+	disconnected map[chess.Color]bool
+	graceTimer   *time.Timer
+	graceColor   chess.Color
+
+	spectators map[string]wire.Conn
 }
 
 type EndInfo struct {
@@ -40,18 +51,27 @@ type Recorder interface {
 	Record(EndInfo) *wire.GameRatings
 }
 
+type ChatRecorder interface {
+	RecordChat(senderID, body string)
+}
+
 // this func wires a game to its two player conns. white/black are the
-// connection handles for those colors
-func NewActor(id string, g *Game, white, black wire.Conn, onEnd func(gameID string), rec Recorder) *Actor {
+// connection handles for those colors. graceSecs is the reconnect grace
+// window (0 → abandon immediately on disconnect). chat may be nil.
+func NewActor(id string, g *Game, white, black wire.Conn, onEnd func(gameID string), rec Recorder, graceSecs int, chat ChatRecorder) *Actor {
 	return &Actor{
-		id:    id,
-		game:  g,
-		conns: map[chess.Color]wire.Conn{chess.White: white, chess.Black: black},
-		color: map[string]chess.Color{white.UserID(): chess.White, black.UserID(): chess.Black},
-		cmds:  make(chan command, 16),
-		now:   time.Now,
-		onEnd: onEnd,
-		rec:   rec,
+		id:           id,
+		game:         g,
+		conns:        map[chess.Color]wire.Conn{chess.White: white, chess.Black: black},
+		color:        map[string]chess.Color{white.UserID(): chess.White, black.UserID(): chess.Black},
+		cmds:         make(chan command, 16),
+		now:          time.Now,
+		onEnd:        onEnd,
+		rec:          rec,
+		chat:         chat,
+		graceSecs:    graceSecs,
+		disconnected: map[chess.Color]bool{},
+		spectators:   map[string]wire.Conn{},
 	}
 }
 
@@ -65,11 +85,27 @@ func (a *Actor) RespondDraw(userID string, ok bool) {
 }
 func (a *Actor) PlayerGone(userID string) { a.cmds <- playerGoneCmd{userID: userID} }
 
+func (a *Actor) Rejoin(userID string, conn wire.Conn) {
+	a.cmds <- rejoinCmd{userID: userID, conn: conn}
+}
+
+func (a *Actor) Chat(userID, text string) { a.cmds <- chatCmd{userID: userID, text: text} }
+
+func (a *Actor) AddSpectator(userID string, conn wire.Conn) {
+	a.cmds <- addSpectatorCmd{userID: userID, conn: conn}
+}
+
+func (a *Actor) RemoveSpectator(userID string) { a.cmds <- removeSpectatorCmd{userID: userID} }
+
 func (a *Actor) Run() {
 	defer a.recoverGuard()
 	a.timer = time.NewTimer(a.remaining())
 	defer a.timer.Stop()
 	for !a.finished {
+		var graceC <-chan time.Time
+		if a.graceTimer != nil {
+			graceC = a.graceTimer.C
+		}
 		select {
 		case c, ok := <-a.cmds:
 			if !ok {
@@ -78,6 +114,8 @@ func (a *Actor) Run() {
 			a.handle(c)
 		case <-a.timer.C:
 			a.handleTimeout()
+		case <-graceC:
+			a.handleGraceExpired()
 		}
 	}
 }
@@ -103,12 +141,29 @@ type drawRespondCmd struct {
 	accept bool
 }
 type playerGoneCmd struct{ userID string }
+type rejoinCmd struct {
+	userID string
+	conn   wire.Conn
+}
+type chatCmd struct {
+	userID string
+	text   string
+}
+type addSpectatorCmd struct {
+	userID string
+	conn   wire.Conn
+}
+type removeSpectatorCmd struct{ userID string }
 
-func (moveCmd) isCommand()        {}
-func (resignCmd) isCommand()      {}
-func (drawOfferCmd) isCommand()   {}
-func (drawRespondCmd) isCommand() {}
-func (playerGoneCmd) isCommand()  {}
+func (moveCmd) isCommand()            {}
+func (resignCmd) isCommand()          {}
+func (drawOfferCmd) isCommand()       {}
+func (drawRespondCmd) isCommand()     {}
+func (playerGoneCmd) isCommand()      {}
+func (rejoinCmd) isCommand()          {}
+func (chatCmd) isCommand()            {}
+func (addSpectatorCmd) isCommand()    {}
+func (removeSpectatorCmd) isCommand() {}
 
 func (a *Actor) handle(c command) {
 	switch cmd := c.(type) {
@@ -122,6 +177,14 @@ func (a *Actor) handle(c command) {
 		a.handleDrawRespond(cmd)
 	case playerGoneCmd:
 		a.handlePlayerGone(cmd)
+	case rejoinCmd:
+		a.handleRejoin(cmd)
+	case chatCmd:
+		a.handleChat(cmd)
+	case addSpectatorCmd:
+		a.handleAddSpectator(cmd)
+	case removeSpectatorCmd:
+		a.handleRemoveSpectator(cmd)
 	}
 }
 
@@ -211,9 +274,131 @@ func (a *Actor) handleDrawRespond(c drawRespondCmd) {
 	a.finish()
 }
 
-func (a *Actor) handlePlayerGone(playerGoneCmd) {
-	//implement later, right now focusing on timer to end game, pretty sad but theres no solid SINGLE workaroud
-	//basically, th eonline player will have to keep waiting til the timer runs out
+func (a *Actor) handlePlayerGone(c playerGoneCmd) {
+	if a.game.Status() != StatusActive {
+		return
+	}
+	col, ok := a.color[c.userID]
+	if !ok || a.disconnected[col] {
+		return
+	}
+	a.disconnected[col] = true
+	msg := wire.NewOpponentDisconnected(colorName(col), a.graceSecs)
+	a.sendColor(opposite(col), msg)
+	a.sendSpectators(msg)
+
+	if a.graceSecs <= 0 {
+		a.abandon(col)
+		return
+	}
+
+	a.graceColor = col
+	a.stopGraceTimer()
+	a.graceTimer = time.NewTimer(time.Duration(a.graceSecs) * time.Second)
+}
+
+func (a *Actor) handleGraceExpired() {
+	a.graceTimer = nil
+	col := a.graceColor
+	if a.game.Status() != StatusActive || !a.disconnected[col] {
+		return
+	}
+	a.abandon(col)
+}
+
+func (a *Actor) abandon(loser chess.Color) {
+	if err := a.game.AbandonedBy(loser); err != nil {
+		return
+	}
+	a.finish()
+}
+
+func (a *Actor) handleRejoin(c rejoinCmd) {
+	col, ok := a.color[c.userID]
+	if !ok {
+		if c.conn != nil {
+			c.conn.Send(wire.NewError(wire.CodeNotInGame, "not a player in this game"))
+		}
+		return
+	}
+	if a.game.Status() != StatusActive {
+		if c.conn != nil {
+			c.conn.Send(wire.GameOver{
+				Type:   wire.TypeGameOver,
+				GameID: a.id,
+				Result: a.game.Result(),
+				Reason: a.game.Reason(),
+			})
+		}
+		return
+	}
+	a.conns[col] = c.conn
+	delete(a.disconnected, col)
+	if a.graceColor == col {
+		a.stopGraceTimer()
+	}
+	c.conn.Send(wire.GameStart{
+		Type:     wire.TypeGameStart,
+		GameID:   a.id,
+		Color:    colorName(col),
+		Opponent: a.opponentName(col),
+		Clocks: wire.Clocks{
+			WhiteMs: a.game.RemainingMillis(chess.White, a.now()),
+			BlackMs: a.game.RemainingMillis(chess.Black, a.now()),
+		},
+		FEN: a.game.FEN(),
+	})
+	c.conn.Send(a.stateSnapshot())
+	msg := wire.NewOpponentReconnected(colorName(col))
+	a.sendColor(opposite(col), msg)
+	a.sendSpectators(msg)
+}
+
+func (a *Actor) handleChat(c chatCmd) {
+	col, ok := a.color[c.userID]
+	if !ok {
+		return
+	}
+	text := strings.TrimSpace(c.text)
+	if text == "" {
+		return
+	}
+	if r := []rune(text); len(r) > maxChatRunes {
+		text = string(r[:maxChatRunes])
+	}
+	fromName := ""
+	if conn, ok := a.conns[col]; ok && conn != nil {
+		fromName = conn.DisplayName()
+	}
+	a.broadcast(wire.NewChatMsg(a.id, c.userID, fromName, text, a.now().UnixMilli()))
+	if a.chat != nil {
+		a.chat.RecordChat(c.userID, text)
+	}
+}
+
+func (a *Actor) handleAddSpectator(c addSpectatorCmd) {
+	if c.conn == nil {
+		return
+	}
+	a.spectators[c.userID] = c.conn
+	c.conn.Send(wire.GameStart{
+		Type:     wire.TypeGameStart,
+		GameID:   a.id,
+		Color:    wire.ColorSpectator,
+		Opponent: "",
+		White:    a.playerName(chess.White),
+		Black:    a.playerName(chess.Black),
+		Clocks: wire.Clocks{
+			WhiteMs: a.game.RemainingMillis(chess.White, a.now()),
+			BlackMs: a.game.RemainingMillis(chess.Black, a.now()),
+		},
+		FEN: a.game.FEN(),
+	})
+	c.conn.Send(a.stateSnapshot())
+}
+
+func (a *Actor) handleRemoveSpectator(c removeSpectatorCmd) {
+	delete(a.spectators, c.userID)
 }
 
 func (a *Actor) handleTimeout() {
@@ -252,6 +437,7 @@ func (a *Actor) finish() {
 	if a.timer != nil {
 		a.timer.Stop()
 	}
+	a.stopGraceTimer()
 	if a.onEnd != nil {
 		a.onEnd(a.id)
 	}
@@ -271,12 +457,56 @@ func (a *Actor) broadcastState(lastMove string) {
 
 func (a *Actor) broadcast(v any) {
 	for _, c := range a.conns {
-		c.Send(v)
+		if c != nil {
+			c.Send(v)
+		}
+	}
+	a.sendSpectators(v)
+}
+
+func (a *Actor) sendSpectators(v any) {
+	for _, c := range a.spectators {
+		if c != nil {
+			c.Send(v)
+		}
 	}
 }
 
+func (a *Actor) stopGraceTimer() {
+	if a.graceTimer == nil {
+		return
+	}
+	if !a.graceTimer.Stop() {
+		select {
+		case <-a.graceTimer.C:
+		default:
+		}
+	}
+	a.graceTimer = nil
+}
+
+func (a *Actor) stateSnapshot() wire.GameState {
+	return wire.GameState{
+		Type:    wire.TypeGameState,
+		GameID:  a.id,
+		FEN:     a.game.FEN(),
+		WhiteMs: a.game.RemainingMillis(chess.White, a.now()),
+		BlackMs: a.game.RemainingMillis(chess.Black, a.now()),
+		Turn:    colorName(a.game.Turn()),
+	}
+}
+
+func (a *Actor) playerName(col chess.Color) string {
+	if c, ok := a.conns[col]; ok && c != nil {
+		return c.DisplayName()
+	}
+	return ""
+}
+
+func (a *Actor) opponentName(col chess.Color) string { return a.playerName(opposite(col)) }
+
 func (a *Actor) sendColor(col chess.Color, v any) {
-	if c, ok := a.conns[col]; ok {
+	if c, ok := a.conns[col]; ok && c != nil {
 		c.Send(v)
 	}
 }

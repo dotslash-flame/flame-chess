@@ -30,7 +30,11 @@ func main() {
 	}
 	defer st.Close()
 
-	h := hub.New(hub.Options{Store: st})
+	h := hub.New(hub.Options{
+		Store:          st,
+		GraceSecs:      cfg.ReconnectGraceSecs,
+		RematchTTLSecs: cfg.RematchTTLSecs,
+	})
 	go h.Run(ctx.Done())
 
 	srv := &http.Server{
