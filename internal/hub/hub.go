@@ -19,9 +19,10 @@ type gameActor = game.Actor
 
 type GameAction struct {
 	GameID string
-	Kind   string // move or resign or draw_offer or draw_respond
+	Kind   string // move or resign or draw_offer or draw_respond or chat
 	UCI    string
 	Accept bool
+	Text   string // chat body (Kind == "chat")
 }
 
 type poolKey struct {
@@ -38,11 +39,32 @@ type challenge struct {
 	increment   int
 }
 
+type rematchCtx struct {
+	white     string
+	black     string
+	base      int
+	increment int
+	offeredBy string
+	deadline  time.Time
+}
+
+type liveGameInfo struct {
+	whiteName string
+	blackName string
+	category  string
+	base      int
+	increment int
+}
+
+const defaultRematchTTLSecs = 60
+
 type Options struct {
-	Rng    func(n int) int  // picks colors
-	NextID func() string    // game id generator
-	Now    func() time.Time // clock start time
-	Store  *store.Store     // persistence; nil → games are not recorded/rated
+	Rng            func(n int) int  // picks colors
+	NextID         func() string    // game id generator
+	Now            func() time.Time // clock start time
+	Store          *store.Store     // persistence; nil → games are not recorded/rated
+	GraceSecs      int              // reconnect grace window passed to each actor
+	RematchTTLSecs int              // rematch offer lifetime (0 → default 60s)
 }
 
 type Hub struct {
@@ -55,27 +77,42 @@ type Hub struct {
 	gamePlayers map[string][]string
 	challenges  map[string]challenge
 
-	rng    func(n int) int
-	nextID func() string
-	now    func() time.Time
-	run    func(*game.Actor)
-	store  *store.Store
+	rematches     map[string]rematchCtx
+	spectatorGame map[string]string
+	liveGames     map[string]liveGameInfo
+
+	rng        func(n int) int
+	nextID     func() string
+	now        func() time.Time
+	run        func(*game.Actor)
+	store      *store.Store
+	graceSecs  int
+	rematchTTL time.Duration
 }
 
 func New(opts Options) *Hub {
+	ttl := opts.RematchTTLSecs
+	if ttl <= 0 {
+		ttl = defaultRematchTTLSecs
+	}
 	h := &Hub{
-		cmds:        make(chan command, 64),
-		online:      map[string]wire.Conn{},
-		pools:       map[poolKey][]string{},
-		games:       map[string]*game.Actor{},
-		userGame:    map[string]string{},
-		gamePlayers: map[string][]string{},
-		challenges:  map[string]challenge{},
-		rng:         opts.Rng,
-		nextID:      opts.NextID,
-		now:         opts.Now,
-		run:         func(a *game.Actor) { go a.Run() },
-		store:       opts.Store,
+		cmds:          make(chan command, 64),
+		online:        map[string]wire.Conn{},
+		pools:         map[poolKey][]string{},
+		games:         map[string]*game.Actor{},
+		userGame:      map[string]string{},
+		gamePlayers:   map[string][]string{},
+		challenges:    map[string]challenge{},
+		rematches:     map[string]rematchCtx{},
+		spectatorGame: map[string]string{},
+		liveGames:     map[string]liveGameInfo{},
+		rng:           opts.Rng,
+		nextID:        opts.NextID,
+		now:           opts.Now,
+		run:           func(a *game.Actor) { go a.Run() },
+		store:         opts.Store,
+		graceSecs:     opts.GraceSecs,
+		rematchTTL:    time.Duration(ttl) * time.Second,
 	}
 	if h.rng == nil {
 		h.rng = func(n int) int { return mrand.IntN(n) }
@@ -113,6 +150,23 @@ func (h *Hub) QueueJoin(userID, category string, base, increment int) {
 }
 func (h *Hub) QueueLeave(userID string)          { h.enqueue(queueLeaveCmd{userID: userID}) }
 func (h *Hub) Route(userID string, a GameAction) { h.enqueue(routeCmd{userID: userID, action: a}) }
+
+func (h *Hub) OfferRematch(userID, gameID string) {
+	h.enqueue(offerRematchCmd{userID: userID, gameID: gameID})
+}
+func (h *Hub) RespondRematch(userID, gameID string, accept bool) {
+	h.enqueue(respondRematchCmd{userID: userID, gameID: gameID, accept: accept})
+}
+func (h *Hub) SpectateJoin(userID, gameID string) {
+	h.enqueue(spectateJoinCmd{userID: userID, gameID: gameID})
+}
+func (h *Hub) SpectateLeave(userID string) { h.enqueue(spectateLeaveCmd{userID: userID}) }
+
+func (h *Hub) LiveGames() []wire.LiveGame {
+	reply := make(chan []wire.LiveGame, 1)
+	h.enqueue(liveGamesCmd{reply: reply})
+	return <-reply
+}
 
 func (h *Hub) CreateChallenge(creator, creatorName, opponent string, base, increment int) string {
 	reply := make(chan string, 1)
@@ -175,6 +229,21 @@ type cancelChallengeCmd struct {
 	userID string
 	token  string
 }
+type offerRematchCmd struct {
+	userID string
+	gameID string
+}
+type respondRematchCmd struct {
+	userID string
+	gameID string
+	accept bool
+}
+type spectateJoinCmd struct {
+	userID string
+	gameID string
+}
+type spectateLeaveCmd struct{ userID string }
+type liveGamesCmd struct{ reply chan []wire.LiveGame }
 
 func (registerCmd) isCommand()         {}
 func (unregisterCmd) isCommand()       {}
@@ -186,6 +255,11 @@ func (createChallengeCmd) isCommand()  {}
 func (acceptChallengeCmd) isCommand()  {}
 func (declineChallengeCmd) isCommand() {}
 func (cancelChallengeCmd) isCommand()  {}
+func (offerRematchCmd) isCommand()     {}
+func (respondRematchCmd) isCommand()   {}
+func (spectateJoinCmd) isCommand()     {}
+func (spectateLeaveCmd) isCommand()    {}
+func (liveGamesCmd) isCommand()        {}
 
 func (h *Hub) handle(c command) {
 	switch cmd := c.(type) {
@@ -209,6 +283,16 @@ func (h *Hub) handle(c command) {
 		h.handleDeclineChallenge(cmd)
 	case cancelChallengeCmd:
 		h.handleCancelChallenge(cmd)
+	case offerRematchCmd:
+		h.handleOfferRematch(cmd)
+	case respondRematchCmd:
+		h.handleRespondRematch(cmd)
+	case spectateJoinCmd:
+		h.handleSpectateJoin(cmd)
+	case spectateLeaveCmd:
+		h.handleSpectateLeave(cmd)
+	case liveGamesCmd:
+		cmd.reply <- h.liveGameList()
 	}
 }
 
@@ -218,6 +302,12 @@ func (h *Hub) handleRegister(c registerCmd) {
 		old.Close()
 	}
 	h.online[uid] = c.conn
+	if gid, ok := h.userGame[uid]; ok {
+		if a, ok := h.games[gid]; ok {
+			a.Rejoin(uid, c.conn)
+		}
+	}
+	c.conn.Send(wire.NewGamesLive(h.liveGameList()))
 	h.broadcastOnlineCount()
 	h.broadcastOnlineList()
 }
@@ -230,6 +320,13 @@ func (h *Hub) handleUnregister(c unregisterCmd) {
 	delete(h.online, uid)
 	h.removeFromPools(uid)
 	h.dropChallengesBy(uid)
+	h.invalidateRematchesFor(uid)
+	if sgid, ok := h.spectatorGame[uid]; ok {
+		if a, ok := h.games[sgid]; ok {
+			a.RemoveSpectator(uid)
+		}
+		delete(h.spectatorGame, uid)
+	}
 	if gid, ok := h.userGame[uid]; ok {
 		if a, ok := h.games[gid]; ok {
 			a.PlayerGone(uid)
@@ -272,25 +369,37 @@ func (h *Hub) startGame(key poolKey, head, joiner wire.Conn) {
 	if h.rng(2) == 1 {
 		white, black = joiner, head
 	}
+	h.startGameColors(key, white, black)
+}
+
+func (h *Hub) startGameColors(key poolKey, white, black wire.Conn) {
 	gid := h.nextID()
 	g := game.NewGame(key.base, key.increment, h.now())
 
 	var rec game.Recorder
+	var chat game.ChatRecorder
 	if h.store != nil {
 		dbID, err := h.store.InsertActiveGame(context.Background(), white.UserID(), black.UserID(), string(g.Category()), key.base, key.increment)
 		if err != nil {
 			log.Printf("hub: insert active game: %v", err)
 		} else {
 			rec = recorder.New(h.store, dbID, white.UserID(), black.UserID())
+			chat = recorder.NewChat(h.store, dbID)
 		}
 	}
 
-	actor := game.NewActor(gid, g, white, black, func(id string) { h.enqueue(gameEndedCmd{gameID: id}) }, rec)
+	actor := game.NewActor(gid, g, white, black, func(id string) { h.enqueue(gameEndedCmd{gameID: id}) }, rec, h.graceSecs, chat)
 
 	h.games[gid] = actor
 	h.userGame[white.UserID()] = gid
 	h.userGame[black.UserID()] = gid
 	h.gamePlayers[gid] = []string{white.UserID(), black.UserID()}
+	h.invalidateRematchesFor(white.UserID())
+	h.invalidateRematchesFor(black.UserID())
+	h.liveGames[gid] = liveGameInfo{
+		whiteName: white.DisplayName(), blackName: black.DisplayName(),
+		category: string(g.Category()), base: key.base, increment: key.increment,
+	}
 	h.run(actor)
 
 	clocks := wire.Clocks{
@@ -306,6 +415,7 @@ func (h *Hub) startGame(key poolKey, head, joiner wire.Conn) {
 		Type: wire.TypeGameStart, GameID: gid, Color: "black",
 		Opponent: white.DisplayName(), Clocks: clocks, FEN: fen,
 	})
+	h.broadcastGamesLive()
 }
 
 func (h *Hub) handleQueueLeave(c queueLeaveCmd) {
@@ -337,15 +447,36 @@ func (h *Hub) handleRoute(c routeCmd) {
 		a.OfferDraw(c.userID)
 	case "draw_respond":
 		a.RespondDraw(c.userID, c.action.Accept)
+	case "chat":
+		a.Chat(c.userID, c.action.Text)
 	}
 }
 
 func (h *Hub) handleGameEnded(c gameEndedCmd) {
-	for _, uid := range h.gamePlayers[c.gameID] {
+	players := h.gamePlayers[c.gameID]
+	if len(players) == 2 {
+		info := h.liveGames[c.gameID]
+		h.rematches[c.gameID] = rematchCtx{
+			white:     players[0],
+			black:     players[1],
+			base:      info.base,
+			increment: info.increment,
+			deadline:  h.now().Add(h.rematchTTL),
+		}
+	}
+	for _, uid := range players {
 		delete(h.userGame, uid)
+	}
+	for uid, gid := range h.spectatorGame {
+		if gid == c.gameID {
+			delete(h.spectatorGame, uid)
+		}
 	}
 	delete(h.gamePlayers, c.gameID)
 	delete(h.games, c.gameID)
+	delete(h.liveGames, c.gameID)
+	h.sweepRematches()
+	h.broadcastGamesLive()
 }
 
 func (h *Hub) removeFromPools(userID string) {
@@ -501,6 +632,163 @@ func (h *Hub) dropChallengesBy(uid string) {
 			delete(h.challenges, token)
 			sendIfOnline(h.online[ch.creator], wire.NewChallengeDeclined(token))
 		}
+	}
+}
+
+func (r rematchCtx) opponentOf(uid string) string {
+	if uid == r.white {
+		return r.black
+	}
+	return r.white
+}
+
+func (r rematchCtx) hasPlayer(uid string) bool { return uid == r.white || uid == r.black }
+
+func (h *Hub) handleOfferRematch(c offerRematchCmd) {
+	conn := h.online[c.userID]
+	ctx, ok := h.rematches[c.gameID]
+	if !ok || h.now().After(ctx.deadline) || !ctx.hasPlayer(c.userID) {
+		delete(h.rematches, c.gameID)
+		sendErr(conn, wire.CodeRematchUnavailable, "rematch no longer available")
+		return
+	}
+	opp := ctx.opponentOf(c.userID)
+	if _, online := h.online[opp]; !online {
+		delete(h.rematches, c.gameID)
+		sendErr(conn, wire.CodeRematchUnavailable, "they're offline")
+		return
+	}
+	if _, busy := h.userGame[c.userID]; busy {
+		sendErr(conn, wire.CodeBusy, "one of you is already in a game")
+		return
+	}
+	if _, busy := h.userGame[opp]; busy {
+		sendErr(conn, wire.CodeBusy, "one of you is already in a game")
+		return
+	}
+	if ctx.offeredBy == opp {
+		delete(h.rematches, c.gameID)
+		h.startRematch(ctx)
+		return
+	}
+	ctx.offeredBy = c.userID
+	h.rematches[c.gameID] = ctx
+	fromName := ""
+	if conn != nil {
+		fromName = conn.DisplayName()
+	}
+	sendIfOnline(h.online[opp], wire.NewRematchOffered(c.gameID, c.userID, fromName))
+}
+
+func (h *Hub) handleRespondRematch(c respondRematchCmd) {
+	conn := h.online[c.userID]
+	ctx, ok := h.rematches[c.gameID]
+	if !ok || h.now().After(ctx.deadline) || !ctx.hasPlayer(c.userID) {
+		delete(h.rematches, c.gameID)
+		sendErr(conn, wire.CodeRematchUnavailable, "rematch no longer available")
+		return
+	}
+	if ctx.offeredBy == "" || ctx.offeredBy == c.userID {
+		sendErr(conn, wire.CodeRematchUnavailable, "no rematch to respond to")
+		return
+	}
+	offerer := ctx.offeredBy
+	if !c.accept {
+		delete(h.rematches, c.gameID)
+		sendIfOnline(h.online[offerer], wire.NewRematchDeclined(c.gameID))
+		return
+	}
+	if _, online := h.online[offerer]; !online {
+		delete(h.rematches, c.gameID)
+		sendErr(conn, wire.CodeRematchUnavailable, "they're offline")
+		return
+	}
+	if _, busy := h.userGame[c.userID]; busy {
+		sendErr(conn, wire.CodeBusy, "one of you is already in a game")
+		return
+	}
+	if _, busy := h.userGame[offerer]; busy {
+		sendErr(conn, wire.CodeBusy, "one of you is already in a game")
+		return
+	}
+	delete(h.rematches, c.gameID)
+	h.startRematch(ctx)
+}
+
+func (h *Hub) startRematch(ctx rematchCtx) {
+	newWhite := h.online[ctx.black]
+	newBlack := h.online[ctx.white]
+	if newWhite == nil || newBlack == nil {
+		return
+	}
+	h.startGameColors(poolKey{base: ctx.base, increment: ctx.increment}, newWhite, newBlack)
+}
+
+func (h *Hub) invalidateRematchesFor(uid string) {
+	for gid, ctx := range h.rematches {
+		if !ctx.hasPlayer(uid) {
+			continue
+		}
+		if ctx.offeredBy != "" {
+			sendIfOnline(h.online[ctx.opponentOf(uid)], wire.NewRematchDeclined(gid))
+		}
+		delete(h.rematches, gid)
+	}
+}
+
+func (h *Hub) sweepRematches() {
+	now := h.now()
+	for gid, ctx := range h.rematches {
+		if now.After(ctx.deadline) {
+			delete(h.rematches, gid)
+		}
+	}
+}
+
+func (h *Hub) handleSpectateJoin(c spectateJoinCmd) {
+	conn := h.online[c.userID]
+	a, ok := h.games[c.gameID]
+	if !ok {
+		sendErr(conn, wire.CodeUnknownGame, "that game isn't live")
+		return
+	}
+	if pgid, ok := h.userGame[c.userID]; ok && pgid == c.gameID {
+		sendErr(conn, wire.CodeUnknownGame, "you're a player in this game")
+		return
+	}
+	if conn == nil {
+		return
+	}
+	a.AddSpectator(c.userID, conn)
+	h.spectatorGame[c.userID] = c.gameID
+}
+
+func (h *Hub) handleSpectateLeave(c spectateLeaveCmd) {
+	gid, ok := h.spectatorGame[c.userID]
+	if !ok {
+		return
+	}
+	if a, ok := h.games[gid]; ok {
+		a.RemoveSpectator(c.userID)
+	}
+	delete(h.spectatorGame, c.userID)
+}
+
+func (h *Hub) liveGameList() []wire.LiveGame {
+	out := make([]wire.LiveGame, 0, len(h.liveGames))
+	for gid, info := range h.liveGames {
+		out = append(out, wire.LiveGame{
+			GameID: gid, White: info.whiteName, Black: info.blackName,
+			Category: info.category, Base: info.base, Increment: info.increment,
+		})
+	}
+	return out
+}
+
+func (h *Hub) broadcastGamesLive() {
+	msg := wire.NewGamesLive(h.liveGameList())
+	for _, c := range h.online {
+		c.Send(msg)
 	}
 }
 

@@ -8,21 +8,24 @@ import (
 	"github.com/dotslash-flame/flame-chess/internal/store"
 )
 
-// fakeStore is an in-memory implementation of the Store interface for tests.
 type fakeStore struct {
-	bySub   map[string]string // google_sub -> user id
-	byID    map[string]store.User
-	ratings map[string]map[string]store.CategoryRating // user id -> category -> rating
-	games   map[string][]store.GameRow                 // user id -> finished games
-	seq     int
+	bySub     map[string]string
+	byID      map[string]store.User
+	ratings   map[string]map[string]store.CategoryRating
+	games     map[string][]store.GameRow
+	gamesByID map[string]store.GameRow
+	messages  map[string][]store.ChatRow
+	seq       int
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		bySub:   map[string]string{},
-		byID:    map[string]store.User{},
-		ratings: map[string]map[string]store.CategoryRating{},
-		games:   map[string][]store.GameRow{},
+		bySub:     map[string]string{},
+		byID:      map[string]store.User{},
+		ratings:   map[string]map[string]store.CategoryRating{},
+		games:     map[string][]store.GameRow{},
+		gamesByID: map[string]store.GameRow{},
+		messages:  map[string][]store.ChatRow{},
 	}
 }
 
@@ -38,7 +41,7 @@ func (f *fakeStore) seedUser(id, name, email string) {
 func (f *fakeStore) UpsertUser(_ context.Context, googleSub, email, displayName, avatarURL string) (store.User, error) {
 	if id, ok := f.bySub[googleSub]; ok {
 		u := f.byID[id]
-		u.Email = email // re-login refreshes email/avatar but not the display name
+		u.Email = email
 		u.AvatarURL = avatarURL
 		f.byID[id] = u
 		return u, nil
@@ -98,7 +101,6 @@ func (f *fakeStore) Leaderboard(_ context.Context, category string, limit int) (
 			GamesPlayed: r.GamesPlayed,
 		})
 	}
-	// Insertion-sort by rating desc for deterministic ordering.
 	for i := 1; i < len(out); i++ {
 		for j := i; j > 0 && out[j].Rating > out[j-1].Rating; j-- {
 			out[j], out[j-1] = out[j-1], out[j]
@@ -116,4 +118,15 @@ func (f *fakeStore) GamesForUser(_ context.Context, userID string, limit int) ([
 		rows = rows[:limit]
 	}
 	return rows, nil
+}
+
+func (f *fakeStore) GameByID(_ context.Context, gameID string) (store.GameRow, error) {
+	if g, ok := f.gamesByID[gameID]; ok {
+		return g, nil
+	}
+	return store.GameRow{}, errors.New("game not found")
+}
+
+func (f *fakeStore) GameMessages(_ context.Context, gameID string) ([]store.ChatRow, error) {
+	return f.messages[gameID], nil
 }

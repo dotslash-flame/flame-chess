@@ -14,4 +14,6 @@ type Store interface {
 	UpdateDisplayName(ctx context.Context, userID, name string) (store.User, error)
 	Leaderboard(ctx context.Context, category string, limit int) ([]store.LeaderboardEntry, error)
 	GamesForUser(ctx context.Context, userID string, limit int) ([]store.GameRow, error)
+	GameByID(ctx context.Context, gameID string) (store.GameRow, error)
+	GameMessages(ctx context.Context, gameID string) ([]store.ChatRow, error)
 }

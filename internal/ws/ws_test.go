@@ -11,10 +11,14 @@ import (
 )
 
 type fakeRouter struct {
-	joins   []wire.QueueJoin
-	routes  []hub.GameAction
-	directs []wire.ChallengeCreateDirect
-	accepts []string
+	joins      []wire.QueueJoin
+	routes     []hub.GameAction
+	directs    []wire.ChallengeCreateDirect
+	accepts    []string
+	rematchOff []string
+	rematchRsp []wire.RematchRespond
+	specJoin   []string
+	specLeave  int
 }
 
 func (f *fakeRouter) Register(wire.Conn)   {}
@@ -30,6 +34,12 @@ func (f *fakeRouter) CreateDirectChallenge(_, opponentID string, base, increment
 func (f *fakeRouter) AcceptChallenge(_, token string)  { f.accepts = append(f.accepts, token) }
 func (f *fakeRouter) DeclineChallenge(_, token string) {}
 func (f *fakeRouter) CancelChallenge(_, token string)  {}
+func (f *fakeRouter) OfferRematch(_, gameID string)    { f.rematchOff = append(f.rematchOff, gameID) }
+func (f *fakeRouter) RespondRematch(_, gameID string, accept bool) {
+	f.rematchRsp = append(f.rematchRsp, wire.RematchRespond{GameID: gameID, Accept: accept})
+}
+func (f *fakeRouter) SpectateJoin(_, gameID string) { f.specJoin = append(f.specJoin, gameID) }
+func (f *fakeRouter) SpectateLeave(string)          { f.specLeave++ }
 
 func newTestConn(r Router) *Conn {
 	ctx, cancel := context.WithCancel(context.Background())

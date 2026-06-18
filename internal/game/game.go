@@ -73,6 +73,20 @@ func (g *Game) Resign(color chess.Color) error {
 	return nil
 }
 
+func (g *Game) AbandonedBy(loser chess.Color) error {
+	if g.status != StatusActive {
+		return ErrNotActive
+	}
+	g.status = StatusFinished
+	g.reason = "abandoned"
+	if loser == chess.White {
+		g.result = "0-1"
+	} else {
+		g.result = "1-0"
+	}
+	return nil
+}
+
 func (g *Game) AgreeDraw() error {
 	if g.status != StatusActive {
 		return ErrNotActive

@@ -18,6 +18,7 @@ type Config struct {
 	PostLoginRedirect  string
 	CORSAllowedOrigins []string
 	ReconnectGraceSecs int
+	RematchTTLSecs     int
 	StartingRating     int
 	DevLogin           bool
 }
@@ -41,6 +42,12 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	c.ReconnectGraceSecs = grace
+
+	rematchTTL, err := getEnvInt("REMATCH_TTL_SECONDS", 60)
+	if err != nil {
+		return nil, err
+	}
+	c.RematchTTLSecs = rematchTTL
 
 	rating, err := getEnvInt("STARTING_RATING", 800)
 	if err != nil {

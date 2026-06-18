@@ -74,3 +74,18 @@ FROM games
 WHERE (white_id = $1 OR black_id = $1) AND status = 'finished'
 ORDER BY ended_at DESC
 LIMIT $2;
+
+-- name: GameByID :one
+SELECT * FROM games WHERE id = $1;
+
+-- name: InsertGameMessage :one
+INSERT INTO game_messages (game_id, sender_id, body)
+VALUES ($1, $2, $3)
+RETURNING id, created_at;
+
+-- name: GameMessages :many
+SELECT m.body, m.created_at, u.display_name AS sender_name, m.sender_id
+FROM game_messages m
+JOIN users u ON u.id = m.sender_id
+WHERE m.game_id = $1
+ORDER BY m.created_at;

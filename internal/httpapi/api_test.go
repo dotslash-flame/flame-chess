@@ -40,6 +40,61 @@ func TestLeaderboardRanksByRatingDesc(t *testing.T) {
 	}
 }
 
+func TestGameDetailReturnsGameAndMessages(t *testing.T) {
+	st := newFakeStore()
+	st.seedUser("u-1", "Alice", "a@flame.edu.in")
+	st.gamesByID["g-1"] = store.GameRow{
+		ID: "g-1", WhiteID: "u-1", BlackID: "u-2", Category: "blitz",
+		Status: "finished", Result: "1-0", ResultReason: "checkmate", PGN: "1. e4",
+	}
+	st.messages["g-1"] = []store.ChatRow{
+		{SenderID: "u-1", SenderName: "Alice", Body: "gg", CreatedAt: time.Unix(1, 0)},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/games/g-1", nil)
+	req.SetPathValue("id", "g-1")
+	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
+	rec := httptest.NewRecorder()
+
+	gameDetailHandler(st, testSecret)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var out struct {
+		Game     map[string]any `json:"game"`
+		Messages []struct {
+			SenderName string `json:"sender_name"`
+			Body       string `json:"body"`
+			TS         int64  `json:"ts"`
+		} `json:"messages"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Game["id"] != "g-1" || out.Game["result"] != "1-0" {
+		t.Errorf("game = %+v, want g-1/1-0", out.Game)
+	}
+	if len(out.Messages) != 1 || out.Messages[0].Body != "gg" || out.Messages[0].SenderName != "Alice" {
+		t.Errorf("messages = %+v, want one gg/Alice", out.Messages)
+	}
+}
+
+func TestGameDetailUnknownIs404(t *testing.T) {
+	st := newFakeStore()
+	st.seedUser("u-1", "Alice", "a@flame.edu.in")
+	req := httptest.NewRequest(http.MethodGet, "/api/games/nope", nil)
+	req.SetPathValue("id", "nope")
+	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
+	rec := httptest.NewRecorder()
+
+	gameDetailHandler(st, testSecret)(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
 func TestLeaderboardRequiresAuth(t *testing.T) {
 	rec := httptest.NewRecorder()
 	leaderboardHandler(newFakeStore(), testSecret)(rec, httptest.NewRequest(http.MethodGet, "/api/leaderboard", nil))

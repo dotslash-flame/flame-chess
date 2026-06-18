@@ -74,6 +74,13 @@ type GameRow struct {
 	EndedAt      time.Time
 }
 
+type ChatRow struct {
+	SenderID   string
+	SenderName string
+	Body       string
+	CreatedAt  time.Time
+}
+
 type FinishParams struct {
 	GameID      string
 	Category    string
@@ -224,6 +231,58 @@ func (s *Store) GamesForUser(ctx context.Context, userID string, limit int) ([]G
 			BlackAfter:   int(g.BlackRatingAfter.Int32),
 			StartedAt:    g.StartedAt.Time,
 			EndedAt:      g.EndedAt.Time,
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) GameByID(ctx context.Context, gameID string) (GameRow, error) {
+	g, err := s.q.GameByID(ctx, gameID)
+	if err != nil {
+		return GameRow{}, err
+	}
+	return GameRow{
+		ID:           g.ID,
+		WhiteID:      g.WhiteID,
+		BlackID:      g.BlackID,
+		Category:     g.Category,
+		Status:       g.Status,
+		Result:       g.Result.String,
+		ResultReason: g.ResultReason.String,
+		PGN:          g.Pgn.String,
+		WhiteBefore:  int(g.WhiteRatingBefore.Int32),
+		WhiteAfter:   int(g.WhiteRatingAfter.Int32),
+		BlackBefore:  int(g.BlackRatingBefore.Int32),
+		BlackAfter:   int(g.BlackRatingAfter.Int32),
+		StartedAt:    g.StartedAt.Time,
+		EndedAt:      g.EndedAt.Time,
+	}, nil
+}
+
+func (s *Store) InsertGameMessage(ctx context.Context, gameID, senderID, body string) (int64, time.Time, error) {
+	row, err := s.q.InsertGameMessage(ctx, db.InsertGameMessageParams{
+		GameID:   gameID,
+		SenderID: senderID,
+		Body:     body,
+	})
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+	return row.ID, row.CreatedAt.Time, nil
+}
+
+func (s *Store) GameMessages(ctx context.Context, gameID string) ([]ChatRow, error) {
+	rows, err := s.q.GameMessages(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ChatRow, len(rows))
+	for i, m := range rows {
+		out[i] = ChatRow{
+			SenderID:   m.SenderID,
+			SenderName: m.SenderName,
+			Body:       m.Body,
+			CreatedAt:  m.CreatedAt.Time,
 		}
 	}
 	return out, nil

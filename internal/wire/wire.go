@@ -29,6 +29,20 @@ const (
 	TypeChallengeDeclined     = "challenge.declined"
 	TypeChallengeGone         = "challenge.gone"
 	TypeOnlineList            = "online.list"
+
+	TypeRematchOffer    = "rematch.offer"
+	TypeRematchRespond  = "rematch.respond"
+	TypeChatSend        = "chat.send"
+	TypeSpectateJoin    = "spectate.join"
+	TypeSpectateLeave   = "spectate.leave"
+	TypeOpponentGone    = "opponent.disconnected"
+	TypeOpponentBack    = "opponent.reconnected"
+	TypeRematchOffered  = "rematch.offered"
+	TypeRematchDeclined = "rematch.declined"
+	TypeChatMsg         = "chat.msg"
+	TypeGamesLive       = "games.live"
+
+	ColorSpectator = "spectator"
 )
 
 const (
@@ -43,6 +57,8 @@ const (
 	CodeChallengeSelf    = "challenge_self"
 	CodeBusy             = "busy"
 	CodeOpponentOffline  = "opponent_offline"
+
+	CodeRematchUnavailable = "rematch_unavailable"
 )
 
 type Conn interface {
@@ -124,6 +140,8 @@ type GameStart struct {
 	Opponent string `json:"opponent"`
 	Clocks   Clocks `json:"clocks"`
 	FEN      string `json:"fen"`
+	White    string `json:"white,omitempty"`
+	Black    string `json:"black,omitempty"`
 }
 
 type GameState struct {
@@ -260,4 +278,100 @@ type OnlineList struct {
 
 func NewOnlineList(users []OnlineUser) OnlineList {
 	return OnlineList{Type: TypeOnlineList, Users: users}
+}
+
+type RematchOffer struct {
+	Type   string `json:"type"`
+	GameID string `json:"game_id"`
+}
+
+type RematchRespond struct {
+	Type   string `json:"type"`
+	GameID string `json:"game_id"`
+	Accept bool   `json:"accept"`
+}
+
+type ChatSend struct {
+	Type   string `json:"type"`
+	GameID string `json:"game_id"`
+	Text   string `json:"text"`
+}
+
+type SpectateJoin struct {
+	Type   string `json:"type"`
+	GameID string `json:"game_id"`
+}
+
+type SpectateLeave struct {
+	Type string `json:"type"`
+}
+
+type OpponentDisconnected struct {
+	Type         string `json:"type"`
+	Color        string `json:"color"`
+	GraceSeconds int    `json:"grace_seconds"`
+}
+
+func NewOpponentDisconnected(color string, graceSeconds int) OpponentDisconnected {
+	return OpponentDisconnected{Type: TypeOpponentGone, Color: color, GraceSeconds: graceSeconds}
+}
+
+type OpponentReconnected struct {
+	Type  string `json:"type"`
+	Color string `json:"color"`
+}
+
+func NewOpponentReconnected(color string) OpponentReconnected {
+	return OpponentReconnected{Type: TypeOpponentBack, Color: color}
+}
+
+type RematchOffered struct {
+	Type     string `json:"type"`
+	GameID   string `json:"game_id"`
+	From     string `json:"from"`
+	FromName string `json:"from_name"`
+}
+
+func NewRematchOffered(gameID, from, fromName string) RematchOffered {
+	return RematchOffered{Type: TypeRematchOffered, GameID: gameID, From: from, FromName: fromName}
+}
+
+type RematchDeclined struct {
+	Type   string `json:"type"`
+	GameID string `json:"game_id"`
+}
+
+func NewRematchDeclined(gameID string) RematchDeclined {
+	return RematchDeclined{Type: TypeRematchDeclined, GameID: gameID}
+}
+
+type ChatMsg struct {
+	Type     string `json:"type"`
+	GameID   string `json:"game_id"`
+	From     string `json:"from"`
+	FromName string `json:"from_name"`
+	Text     string `json:"text"`
+	TS       int64  `json:"ts"`
+}
+
+func NewChatMsg(gameID, from, fromName, text string, ts int64) ChatMsg {
+	return ChatMsg{Type: TypeChatMsg, GameID: gameID, From: from, FromName: fromName, Text: text, TS: ts}
+}
+
+type LiveGame struct {
+	GameID    string `json:"game_id"`
+	White     string `json:"white"`
+	Black     string `json:"black"`
+	Category  string `json:"category"`
+	Base      int    `json:"base"`
+	Increment int    `json:"increment"`
+}
+
+type GamesLive struct {
+	Type  string     `json:"type"`
+	Games []LiveGame `json:"games"`
+}
+
+func NewGamesLive(games []LiveGame) GamesLive {
+	return GamesLive{Type: TypeGamesLive, Games: games}
 }

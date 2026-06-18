@@ -35,15 +35,18 @@ func newTestStore(t *testing.T) *Store {
 
 func resetSchema(t *testing.T, s *Store) {
 	t.Helper()
-	raw, err := os.ReadFile("../../migrations/00001_init.sql")
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
+	ddl := "DROP TABLE IF EXISTS game_messages, games, ratings, users CASCADE;\n"
+	for _, f := range []string{"../../migrations/00001_init.sql", "../../migrations/00002_game_messages.sql"} {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read migration %s: %v", f, err)
+		}
+		up := string(raw)
+		if i := strings.Index(up, "-- +goose Down"); i >= 0 {
+			up = up[:i]
+		}
+		ddl += up + "\n"
 	}
-	up := string(raw)
-	if i := strings.Index(up, "-- +goose Down"); i >= 0 {
-		up = up[:i]
-	}
-	ddl := "DROP TABLE IF EXISTS games, ratings, users CASCADE;\n" + up
 	if _, err := s.pool.Exec(context.Background(), ddl); err != nil {
 		t.Fatalf("apply schema: %v", err)
 	}
@@ -148,6 +151,62 @@ func TestFinishAndRateUpdatesBothPlayers(t *testing.T) {
 	}
 	if len(games) != 1 || games[0].Status != "finished" || games[0].Result != "1-0" {
 		t.Fatalf("games = %+v, want one finished 1-0", games)
+	}
+}
+
+func TestGameMessagesInsertAndOrder(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	white := makeUser(t, s, "dev:white", "white@dev.local", "White")
+	black := makeUser(t, s, "dev:black", "black@dev.local", "Black")
+	gameID, err := s.InsertActiveGame(ctx, white.ID, black.ID, "blitz", 300, 0)
+	if err != nil {
+		t.Fatalf("InsertActiveGame: %v", err)
+	}
+
+	if _, _, err := s.InsertGameMessage(ctx, gameID, white.ID, "hi"); err != nil {
+		t.Fatalf("InsertGameMessage 1: %v", err)
+	}
+	if _, _, err := s.InsertGameMessage(ctx, gameID, black.ID, "yo"); err != nil {
+		t.Fatalf("InsertGameMessage 2: %v", err)
+	}
+
+	msgs, err := s.GameMessages(ctx, gameID)
+	if err != nil {
+		t.Fatalf("GameMessages: %v", err)
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("got %d messages, want 2", len(msgs))
+	}
+	// Ordered by created_at ascending.
+	if msgs[0].Body != "hi" || msgs[0].SenderName != "White" || msgs[0].SenderID != white.ID {
+		t.Errorf("msg[0] = %+v, want hi/White", msgs[0])
+	}
+	if msgs[1].Body != "yo" || msgs[1].SenderName != "Black" {
+		t.Errorf("msg[1] = %+v, want yo/Black", msgs[1])
+	}
+}
+
+func TestGameByID(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	white := makeUser(t, s, "dev:white", "white@dev.local", "White")
+	black := makeUser(t, s, "dev:black", "black@dev.local", "Black")
+	gameID, err := s.InsertActiveGame(ctx, white.ID, black.ID, "rapid", 600, 5)
+	if err != nil {
+		t.Fatalf("InsertActiveGame: %v", err)
+	}
+
+	g, err := s.GameByID(ctx, gameID)
+	if err != nil {
+		t.Fatalf("GameByID: %v", err)
+	}
+	if g.ID != gameID || g.WhiteID != white.ID || g.BlackID != black.ID || g.Category != "rapid" || g.Status != "active" {
+		t.Errorf("GameByID = %+v, want active rapid game", g)
+	}
+
+	if _, err := s.GameByID(ctx, "00000000-0000-0000-0000-000000000000"); err == nil {
+		t.Error("GameByID for unknown id should error")
 	}
 }
 
