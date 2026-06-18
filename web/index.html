@@ -2287,7 +2287,7 @@ function renderBoard(){
   const visCol=f=>files.indexOf(f), visRow=r=>ranks.indexOf(+r);
   for(let ri=0;ri<ranks.length;ri++)for(let fi=0;fi<files.length;fi++){
     const rank=ranks[ri], file=files[fi];
-    const sq=file+rank, dark=('abcdefgh'.indexOf(file)+rank)%2===0;
+    const sq=file+rank, dark=('abcdefgh'.indexOf(file)+rank)%2!==0;
     const c=el('div','sq '+(dark?'d':'l')); c.dataset.sq=sq;
     if(sq===sel)c.classList.add('sel');
     if(last&&(last.slice(0,2)===sq||last.slice(2,4)===sq))c.classList.add('last');
