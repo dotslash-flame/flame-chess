@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/dotslash-flame/flame-chess/internal/auth"
+	"github.com/dotslash-flame/flame-chess/internal/config"
 	"github.com/dotslash-flame/flame-chess/internal/store"
 	"github.com/dotslash-flame/flame-chess/internal/ws"
 )
@@ -82,7 +83,7 @@ func meBody(me store.Me) map[string]any {
 	}
 }
 
-func meHandler(st Store, secret string) http.HandlerFunc {
+func meHandler(st Store, secret string, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := identityFrom(r, secret)
 		if !ok {
@@ -94,11 +95,13 @@ func meHandler(st Store, secret string) http.HandlerFunc {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		writeJSON(w, http.StatusOK, meBody(me))
+		b := meBody(me)
+		b["is_admin"] = cfg.IsAdmin(me.User.Email)
+		writeJSON(w, http.StatusOK, b)
 	}
 }
 
-func patchMeHandler(st Store, secret string, cp cookiePolicy) http.HandlerFunc {
+func patchMeHandler(st Store, secret string, cp cookiePolicy, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := identityFrom(r, secret)
 		if !ok {
@@ -137,7 +140,9 @@ func patchMeHandler(st Store, secret string, cp cookiePolicy) http.HandlerFunc {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, meBody(me))
+		b := meBody(me)
+		b["is_admin"] = cfg.IsAdmin(me.User.Email)
+		writeJSON(w, http.StatusOK, b)
 	}
 }
 

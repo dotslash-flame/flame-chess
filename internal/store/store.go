@@ -70,6 +70,7 @@ type GameRow struct {
 	WhiteAfter   int
 	BlackBefore  int
 	BlackAfter   int
+	Voided       bool
 	StartedAt    time.Time
 	EndedAt      time.Time
 }
@@ -229,6 +230,7 @@ func (s *Store) GamesForUser(ctx context.Context, userID string, limit int) ([]G
 			WhiteAfter:   int(g.WhiteRatingAfter.Int32),
 			BlackBefore:  int(g.BlackRatingBefore.Int32),
 			BlackAfter:   int(g.BlackRatingAfter.Int32),
+			Voided:       g.Voided,
 			StartedAt:    g.StartedAt.Time,
 			EndedAt:      g.EndedAt.Time,
 		}
@@ -254,6 +256,7 @@ func (s *Store) GameByID(ctx context.Context, gameID string) (GameRow, error) {
 		WhiteAfter:   int(g.WhiteRatingAfter.Int32),
 		BlackBefore:  int(g.BlackRatingBefore.Int32),
 		BlackAfter:   int(g.BlackRatingAfter.Int32),
+		Voided:       g.Voided,
 		StartedAt:    g.StartedAt.Time,
 		EndedAt:      g.EndedAt.Time,
 	}, nil
@@ -284,6 +287,175 @@ func (s *Store) GameMessages(ctx context.Context, gameID string) ([]ChatRow, err
 			Body:       m.Body,
 			CreatedAt:  m.CreatedAt.Time,
 		}
+	}
+	return out, nil
+}
+
+type AdminUser struct {
+	ID          string
+	Email       string
+	DisplayName string
+	CreatedAt   time.Time
+	Ratings     map[string]CategoryRating
+}
+
+type AdminGameRow struct {
+	ID           string
+	WhiteID      string
+	BlackID      string
+	WhiteName    string
+	BlackName    string
+	Category     string
+	Status       string
+	Result       string
+	ResultReason string
+	WhiteBefore  int
+	WhiteAfter   int
+	BlackBefore  int
+	BlackAfter   int
+	Voided       bool
+	StartedAt    time.Time
+	EndedAt      time.Time
+}
+
+type AdminChatRow struct {
+	ID         int64
+	SenderID   string
+	SenderName string
+	Body       string
+	Hidden     bool
+	CreatedAt  time.Time
+}
+
+func (s *Store) AdminListUsersWithRatings(ctx context.Context, limit int) ([]AdminUser, error) {
+	us, err := s.q.AdminListUsers(ctx, int32(limit))
+	if err != nil {
+		return nil, err
+	}
+	rs, err := s.q.AdminAllRatings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byUser := make(map[string]map[string]CategoryRating)
+	for _, r := range rs {
+		m := byUser[r.UserID]
+		if m == nil {
+			m = make(map[string]CategoryRating)
+			byUser[r.UserID] = m
+		}
+		m[r.Category] = CategoryRating{Rating: int(r.Rating), GamesPlayed: int(r.GamesPlayed)}
+	}
+	out := make([]AdminUser, len(us))
+	for i, u := range us {
+		out[i] = AdminUser{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, CreatedAt: u.CreatedAt.Time, Ratings: byUser[u.ID]}
+	}
+	return out, nil
+}
+
+func (s *Store) AdminSetRating(ctx context.Context, userID, category string, rating, gamesPlayed int) error {
+	if gamesPlayed < 0 {
+		gamesPlayed = 0
+	}
+	return s.q.AdminSetRating(ctx, db.AdminSetRatingParams{
+		UserID: userID, Category: category, Rating: int32(rating), GamesPlayed: int32(gamesPlayed),
+	})
+}
+
+func (s *Store) AdminListGames(ctx context.Context, limit int) ([]AdminGameRow, error) {
+	rows, err := s.q.AdminListGames(ctx, int32(limit))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AdminGameRow, len(rows))
+	for i, g := range rows {
+		out[i] = AdminGameRow{
+			ID: g.ID, WhiteID: g.WhiteID, BlackID: g.BlackID, WhiteName: g.WhiteName, BlackName: g.BlackName,
+			Category: g.Category, Status: g.Status, Result: g.Result.String, ResultReason: g.ResultReason.String,
+			WhiteBefore: int(g.WhiteRatingBefore.Int32), WhiteAfter: int(g.WhiteRatingAfter.Int32),
+			BlackBefore: int(g.BlackRatingBefore.Int32), BlackAfter: int(g.BlackRatingAfter.Int32),
+			Voided: g.Voided, StartedAt: g.StartedAt.Time, EndedAt: g.EndedAt.Time,
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) AdminGamesByUser(ctx context.Context, userID string, limit int) ([]AdminGameRow, error) {
+	rows, err := s.q.AdminGamesByUser(ctx, db.AdminGamesByUserParams{WhiteID: userID, Limit: int32(limit)})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AdminGameRow, len(rows))
+	for i, g := range rows {
+		out[i] = AdminGameRow{
+			ID: g.ID, WhiteID: g.WhiteID, BlackID: g.BlackID, WhiteName: g.WhiteName, BlackName: g.BlackName,
+			Category: g.Category, Status: g.Status, Result: g.Result.String, ResultReason: g.ResultReason.String,
+			WhiteBefore: int(g.WhiteRatingBefore.Int32), WhiteAfter: int(g.WhiteRatingAfter.Int32),
+			BlackBefore: int(g.BlackRatingBefore.Int32), BlackAfter: int(g.BlackRatingAfter.Int32),
+			Voided: g.Voided, StartedAt: g.StartedAt.Time, EndedAt: g.EndedAt.Time,
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) AdminVoidGame(ctx context.Context, gameID string, voided bool) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	q := s.q.WithTx(tx)
+
+	g, err := q.GameByID(ctx, gameID)
+	if err != nil {
+		return err
+	}
+	if g.Voided == voided {
+		return nil
+	}
+	rated := g.Status == "finished" && g.Result.Valid && g.WhiteRatingBefore.Valid && g.WhiteRatingAfter.Valid
+	if rated {
+		adj := func(userID string, before, after int32) error {
+			cur, err := q.GetRating(ctx, db.GetRatingParams{UserID: userID, Category: g.Category})
+			if err != nil {
+				return err
+			}
+			gp := cur.GamesPlayed
+			var rating int32
+			if voided {
+				rating, gp = before, gp-1
+			} else {
+				rating, gp = after, gp+1
+			}
+			if gp < 0 {
+				gp = 0
+			}
+			return q.AdminSetRating(ctx, db.AdminSetRatingParams{UserID: userID, Category: g.Category, Rating: rating, GamesPlayed: gp})
+		}
+		if err := adj(g.WhiteID, g.WhiteRatingBefore.Int32, g.WhiteRatingAfter.Int32); err != nil {
+			return err
+		}
+		if err := adj(g.BlackID, g.BlackRatingBefore.Int32, g.BlackRatingAfter.Int32); err != nil {
+			return err
+		}
+	}
+	if err := q.AdminSetGameVoided(ctx, db.AdminSetGameVoidedParams{ID: gameID, Voided: voided}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) AdminSetMessageHidden(ctx context.Context, msgID int64, hidden bool) error {
+	return s.q.AdminSetMessageHidden(ctx, db.AdminSetMessageHiddenParams{ID: msgID, Hidden: hidden})
+}
+
+func (s *Store) AdminGameMessages(ctx context.Context, gameID string) ([]AdminChatRow, error) {
+	rows, err := s.q.AdminGameMessages(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AdminChatRow, len(rows))
+	for i, m := range rows {
+		out[i] = AdminChatRow{ID: m.ID, SenderID: m.SenderID, SenderName: m.SenderName, Body: m.Body, Hidden: m.Hidden, CreatedAt: m.CreatedAt.Time}
 	}
 	return out, nil
 }

@@ -64,6 +64,7 @@
   .sq.l{background:var(--light);} .sq.d{background:var(--dark);}
   .sq.sel::before{content:"";position:absolute;inset:0;background:var(--sel);}
   .sq.last::before{content:"";position:absolute;inset:0;background:var(--lastmv);}
+  .sq.premove::before{content:"";position:absolute;inset:0;background:#3aa0e055;box-shadow:inset 0 0 0 3px #3aa0e0aa;}
   .sq.check::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at center,var(--check) 0,var(--check) 18%,transparent 72%);}
   .sq .piece{position:relative;z-index:1;width:90%;height:90%;display:block;pointer-events:none;
              filter:drop-shadow(0 2px 2.5px #00000040);transition:transform .18s cubic-bezier(.22,.61,.36,1);}
@@ -73,8 +74,10 @@
   .sq.l .dot.cap{border-color:#5a4a2e45;}
   .sq:hover .dot{background:var(--accent);opacity:.5;}
   .sq:hover .dot.cap{border-color:var(--accent);background:none;opacity:.55;}
-  .sq .coord{position:absolute;z-index:2;bottom:2px;right:3px;font:600 9px 'JetBrains Mono',ui-monospace,monospace;color:#0000005e;pointer-events:none;}
-  .sq.l .coord{color:#6f8f4e99;} .sq.d .coord{color:#ecf0d699;}
+  /* edge coordinates (chess.com style): rank numbers on the left column, file letters on the bottom row */
+  .sq .rkco{position:absolute;z-index:2;top:2px;left:3px;font:700 9px 'JetBrains Mono',ui-monospace,monospace;pointer-events:none;}
+  .sq .flco{position:absolute;z-index:2;bottom:1px;right:3px;font:700 9px 'JetBrains Mono',ui-monospace,monospace;pointer-events:none;}
+  .sq.l .rkco,.sq.l .flco{color:#5a6f3ec0;} .sq.d .rkco,.sq.d .flco{color:#e7ecd0cc;}
   .sq.drag{cursor:grabbing;}
   @media(prefers-reduced-motion:reduce){ .sq .piece{transition:none!important;} }
 
@@ -216,6 +219,8 @@
     <span class="brand">🔥 FlameChess</span>
     <span class="navlink" data-view="lobby">Play</span>
     <span class="navlink" data-view="leaderboard">Leaderboard</span>
+    <span class="navlink" data-view="history">History</span>
+    <span class="navlink hidden" data-view="admin" id="adminNav">Admin</span>
     <span class="spacer"></span>
     <span class="pill" id="onlinePill">online: ?</span>
     <button class="btn ghost" id="muteBtn" title="Sound" aria-label="Toggle sound" style="padding:4px 8px">🔊</button>
@@ -229,6 +234,8 @@
   <div id="view-lobby" class="view hidden"></div>
   <div id="view-game" class="view hidden"></div>
   <div id="view-leaderboard" class="view hidden"></div>
+  <div id="view-history" class="view hidden"></div>
+  <div id="view-admin" class="view hidden"></div>
 
   <div id="overlayRoot"></div>
   <div id="devPanel" class="panel hidden" style="position:fixed;right:10px;bottom:10px;width:360px;max-height:40vh;overflow:auto;z-index:30"></div>
@@ -2260,21 +2267,40 @@ const state = {
   watchToken:null,    // game_id parsed from ?watch=, consumed once after WS open
   reconnecting:false, // true while the socket is down and retrying
   deliberateClose:false, // set on logout so the close handler doesn't reconnect
+  // ---- Phase 8: history nav / premove / review ----
+  review:{ active:false, ply:0, plies:[], moves:[], lastMoves:[] }, // board-stepping (live + finished games)
+  premove:[],         // chained queue of {from,to,promo?} while it's the opponent's turn
+  reviewEval:null,    // per-ply engine eval/classification (F5), parallel to review.moves
+  histGame:null,      // metadata for a finished game opened from History
 };
+const START_FEN='rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 // ===== view router =====
 function showView(name){
   state.view = name;
-  ['landing','lobby','game','leaderboard'].forEach(v =>
+  ['landing','lobby','game','leaderboard','history','admin'].forEach(v =>
     $('#view-'+v).classList.toggle('hidden', v!==name));
   document.querySelectorAll('.navlink[data-view]').forEach(n =>
     n.classList.toggle('active', n.dataset.view===name));
   if(name==='landing') renderLanding();
   if(name==='lobby') renderLobby();
   if(name==='leaderboard') renderLeaderboard();
+  if(name==='history') renderHistory();
+  if(name==='admin') renderAdmin();
 }
 document.querySelectorAll('.navlink[data-view]').forEach(n =>
   n.onclick = () => showView(n.dataset.view));
+// keyboard: ←/→ step through moves (game + history); Esc cancels a premove
+document.addEventListener('keydown', e=>{
+  if(state.view!=='game' && state.view!=='history') return;
+  const tag=document.activeElement&&document.activeElement.tagName;
+  if(tag==='INPUT'||tag==='TEXTAREA') return;
+  if(e.key==='ArrowLeft'){ reviewStep(-1); e.preventDefault(); }
+  else if(e.key==='ArrowRight'){ ensureReviewPlies();
+    if(state.review.active && state.review.ply>=state.review.plies.length-1) reviewLive(); else reviewStep(1);
+    e.preventDefault(); }
+  else if(e.key==='Escape'){ clearPremove(); }
+});
 
 // ===== auth =====
 function api(path,opts){ return fetch(path,Object.assign({credentials:'include'},opts,
@@ -2286,9 +2312,10 @@ function avatarInner(url,name){
 }
 function avatarHTML(url,name,cls){ return `<span class="avatar ${cls||''}">${avatarInner(url,name)}</span>`; }
 function setIdentity(o){
-  state.me={uid:o.uid,name:o.display_name||o.name,email:o.email||'',avatar:o.avatar_url||'',ratings:o.ratings||null};
+  state.me={uid:o.uid,name:o.display_name||o.name,email:o.email||'',avatar:o.avatar_url||'',ratings:o.ratings||null,is_admin:!!o.is_admin};
   $('#barName').textContent=state.me.name;
   const a=$('#barAvatar'); if(a) a.innerHTML=avatarInner(state.me.avatar,state.me.name);
+  const an=$('#adminNav'); if(an) an.classList.toggle('hidden', !state.me.is_admin);
 }
 function renderLanding(){
   $('#view-landing').innerHTML=`
@@ -2343,6 +2370,7 @@ async function logout(){
                opp:null, lastMove:null, moves:[], over:false, drawFrom:null };
   state.onlineUsers=[]; state.incoming={}; state.pendingOut=null; renderToasts();
   state.spectating=false; state.chat=[]; state.rematch=null; state.liveGames=[]; state.reconnecting=false;
+  state.review={active:false,ply:0,plies:[],moves:[],lastMoves:[]}; state.premove=[]; state.reviewEval=null; state.histGame=null;
   clearOpponentBanner(); hideReconnectBanner();
   stopClock();
   $('#topbar').classList.add('hidden'); showView('landing');
@@ -2361,22 +2389,27 @@ let sel=null, pendingAnim=null;
 function fenToBoard(fen){const rows=(fen||'').split(' ')[0].split('/');const b={};
   for(let r=0;r<8;r++){let f=0;const rank=8-r;for(const ch of rows[r]||''){
     if(/\d/.test(ch))f+=+ch;else{b['abcdefgh'[f]+rank]=ch;f++;}}}return b;}
-function legalDestsFrom(sq){ if(!window.ChessLib||!state.game.fen) return [];
-  try{ const c=new window.ChessLib.Chess(state.game.fen);
+// FEN currently shown on the board: a reviewed past ply, or the live position.
+function boardFen(){ return (state.review.active && state.review.plies.length) ? state.review.plies[state.review.ply] : state.game.fen; }
+function legalDestsFrom(sq){ const fen=boardFen(); if(!window.ChessLib||!fen) return [];
+  try{ const c=new window.ChessLib.Chess(fen);
        return c.moves({square:sq,verbose:true}).map(m=>m.to);}catch(_){return [];}}
-function kingInCheckSquare(){ if(!window.ChessLib||!state.game.fen) return null;
-  try{ const c=new window.ChessLib.Chess(state.game.fen); if(!c.inCheck())return null;
-    const turn=c.turn(); const b=fenToBoard(state.game.fen);
+function kingInCheckSquare(){ const fen=boardFen(); if(!window.ChessLib||!fen) return null;
+  try{ const c=new window.ChessLib.Chess(fen); if(!c.inCheck())return null;
+    const turn=c.turn(); const b=fenToBoard(fen);
     for(const s in b){ if(b[s]===(turn==='w'?'K':'k')) return s; } }catch(_){}
   return null; }
 function renderBoard(){
-  const board=$('#board'); if(!board) return; board.innerHTML='';
-  const pieces=fenToBoard(state.game.fen||'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR');
+  const board=vq('#board'); if(!board) return; board.innerHTML='';
+  const reviewing=state.review.active && state.review.plies.length;
+  const pieces=(!reviewing && state.premove.length) ? projectedBoard() : fenToBoard(boardFen()||'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR');
   const flip=state.game.color==='black';
   const ranks=flip?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1];
   const files=flip?['h','g','f','e','d','c','b','a']:['a','b','c','d','e','f','g','h'];
-  const dests=sel?legalDestsFrom(sel):[];
-  const last=state.game.lastMove; // UCI string e.g. "e2e4"
+  const dests=(!reviewing&&sel)?legalDestsFrom(sel):[];
+  // last-move highlight: while reviewing, the move that led to the shown ply; else the live last move.
+  const last=reviewing ? (state.review.ply>0 ? state.review.lastMoves[state.review.ply-1] : null) : state.game.lastMove; // UCI string e.g. "e2e4"
+  const pm=state.premove;
   const checkSq=kingInCheckSquare();
   const anim=pendingAnim; pendingAnim=null;
   const reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
@@ -2387,6 +2420,7 @@ function renderBoard(){
     const c=el('div','sq '+(dark?'d':'l')); c.dataset.sq=sq;
     if(sq===sel)c.classList.add('sel');
     if(last&&(last.slice(0,2)===sq||last.slice(2,4)===sq))c.classList.add('last');
+    if(pm.length&&pm.some(x=>x.from===sq||x.to===sq))c.classList.add('premove');
     if(sq===checkSq)c.classList.add('check');
     const p=pieces[sq];
     if(p){
@@ -2400,7 +2434,8 @@ function renderBoard(){
       }
     }
     if(dests.includes(sq))c.appendChild(el('div','dot'+(pieces[sq]?' cap':'')));
-    c.appendChild(el('span','coord',sq));
+    if(fi===0) c.appendChild(el('span','rkco',String(rank)));            // rank number on left column
+    if(ri===ranks.length-1) c.appendChild(el('span','flco',file));        // file letter on bottom row
     c.onpointerdown=ev=>onSquareDown(ev,sq);
     board.appendChild(c);
   }
@@ -2412,18 +2447,60 @@ function tryMove(from,to){
   const pieces=fenToBoard(state.game.fen); const p=pieces[from];
   const promo=(p==='P'&&to[1]==='8')||(p==='p'&&to[1]==='1');
   if(promo){ promptPromotion(pr=>doMove(from+to+pr)); } else doMove(from+to); }
-// Unified pointer handling: a single tap selects an own piece and shows its move dots
-// (no click handler, so the selection is no longer cleared by a trailing click).
-// Tap-to-move, tap-same-to-deselect, and drag-to-move all share this path.
+function isLegalMove(from,to){ if(!window.ChessLib) return true;
+  try{ const c=new window.ChessLib.Chess(state.game.fen);
+    return c.moves({square:from,verbose:true}).some(m=>m.to===to); }catch(_){ return true; } }
+// ---- premove (F2): a CHAINED queue of {from,to,promo?} played while it's the opponent's turn ----
+const PREMOVE_MAX=6;
+// Board with all queued premoves applied (illegal allowed) so the chain is visible / chainable.
+function projectedBoard(){
+  const b=fenToBoard(state.game.fen);
+  for(const pm of state.premove){
+    const p=b[pm.from]; if(!p) continue;
+    delete b[pm.from];
+    if((p==='K'||p==='k') && pm.from[0]==='e' && (pm.to[0]==='g'||pm.to[0]==='c')){ // castling: bring the rook
+      const rk=pm.from[1];
+      if(pm.to[0]==='g'){ if(b['h'+rk]){ b['f'+rk]=b['h'+rk]; delete b['h'+rk]; } }
+      else { if(b['a'+rk]){ b['d'+rk]=b['a'+rk]; delete b['a'+rk]; } }
+    }
+    b[pm.to] = pm.promo ? (p===p.toUpperCase()?pm.promo.toUpperCase():pm.promo.toLowerCase()) : p;
+  }
+  return b;
+}
+function setPremove(from,to){
+  if(from===to || state.premove.length>=PREMOVE_MAX) return;
+  const p=projectedBoard()[from];
+  if(!p||!isMine(p)) return;                 // can only premove your own (projected) piece
+  const promo=(p==='P'&&to[1]==='8')||(p==='p'&&to[1]==='1');
+  if(promo){ promptPromotion(pr=>{ state.premove.push({from,to,promo:pr}); sel=null; renderBoard(); }); }
+  else { state.premove.push({from,to}); sel=null; renderBoard(); }
+}
+function clearPremove(){ if(state.premove.length){ state.premove=[]; renderBoard(); } }
+// drag visuals
+function resetDrag(elm){ if(!elm) return; elm.style.transition=''; elm.style.transform=''; elm.style.zIndex=''; elm.style.willChange=''; }
+function slideDragTo(elm,from,to){ if(!elm) return; const bd=vq('#board');
+  const a=bd&&bd.querySelector('[data-sq="'+from+'"]'), b=bd&&bd.querySelector('[data-sq="'+to+'"]');
+  if(!a||!b){ resetDrag(elm); return; }
+  const ar=a.getBoundingClientRect(), br=b.getBoundingClientRect();
+  elm.style.transition='transform .16s cubic-bezier(.22,.61,.36,1)'; elm.style.zIndex='5';
+  elm.style.transform='translate('+(br.left-ar.left)+'px,'+(br.top-ar.top)+'px)'; }
+let optimisticMove=null; // uci of our own drag move already animated locally (suppress the echo re-anim)
+// Unified pointer handling: drag-to-slide, tap-to-move, tap-same-to-deselect; premoves while not our turn.
 function onSquareDown(ev,sq){
-  if(!state.game.id||state.game.over||state.spectating) return;
-  const pieces=fenToBoard(state.game.fen);
+  if(!state.game.id||state.game.over||state.spectating||state.review.active) return;
+  const myTurn = state.game.turn===state.game.color; // when false, actions queue a premove
+  const commit = myTurn ? tryMove : setPremove;
+  const pieces = (!myTurn && state.premove.length) ? projectedBoard() : fenToBoard(state.game.fen);
   const mine=isMine(pieces[sq]);
   const prevSel=sel;
-  const sx=ev.clientX, sy=ev.clientY; let moved=false;
-  // pickup feedback: pressing a fresh own piece selects it immediately (shows dots)
-  if(mine && sq!==prevSel){ sel=sq; renderBoard(); }
-  const move=e=>{ if(!moved && (Math.abs(e.clientX-sx)>6||Math.abs(e.clientY-sy)>6)) moved=true; };
+  const sx=ev.clientX, sy=ev.clientY; let moved=false, dragEl=null;
+  // pickup: select the piece and grab its element so it can follow the pointer
+  if(mine){ sel=sq; renderBoard();
+    const cell=vq('#board').querySelector('[data-sq="'+sq+'"]'); dragEl=cell&&cell.querySelector('.piece');
+    if(dragEl) dragEl.style.willChange='transform'; }
+  const move=e=>{ const dx=e.clientX-sx, dy=e.clientY-sy;
+    if(!moved && (Math.abs(dx)>4||Math.abs(dy)>4)){ moved=true; const bd=vq('#board'); if(bd) bd.style.overflow='visible'; } // un-clip while dragging
+    if(moved && dragEl){ dragEl.style.transition='none'; dragEl.style.zIndex='6'; dragEl.style.transform='translate('+dx+'px,'+dy+'px)'; } };
   const up=e=>{
     document.removeEventListener('pointermove',move);
     document.removeEventListener('pointerup',up);
@@ -2431,14 +2508,22 @@ function onSquareDown(ev,sq){
     const cell=t&&t.closest&&t.closest('.sq');
     const to=cell&&cell.dataset?cell.dataset.sq:null;
     if(moved){ // drag release
-      if(sel && to && to!==sel){ const from=sel; sel=null; renderBoard(); tryMove(from,to); }
+      if(sel && to && to!==sel){
+        const from=sel;
+        if(myTurn){
+          if(!isLegalMove(from,to)){ resetDrag(dragEl); sel=null; renderBoard(); return; }
+          const pc=fenToBoard(state.game.fen)[from];
+          const promo=(pc==='P'&&to[1]==='8')||(pc==='p'&&to[1]==='1');
+          if(promo){ resetDrag(dragEl); sel=null; renderBoard(); tryMove(from,to); }
+          else { slideDragTo(dragEl,from,to); optimisticMove=from+to; sel=null; doMove(from+to);
+                 setTimeout(()=>{ if(optimisticMove===from+to){ optimisticMove=null; renderBoard(); } },800); }
+        } else { sel=null; renderBoard(); setPremove(from,to); }
+      } else { resetDrag(dragEl); if(!mine) sel=null; renderBoard(); }
       return;
     }
-    if(mine){ // tap on own piece
-      if(sq===prevSel){ sel=null; renderBoard(); } // tap the selected piece again -> deselect
-      return; // otherwise it was just selected on pointerdown; keep dots
-    }
-    if(prevSel){ sel=null; renderBoard(); tryMove(prevSel,sq); } // tap a destination
+    if(mine){ if(sq===prevSel){ sel=null; renderBoard(); } return; } // tap own piece -> toggle select
+    if(prevSel){ sel=null; renderBoard(); commit(prevSel,sq); return; } // tap a destination
+    if(!myTurn && state.premove.length) clearPremove(); // tapped empty with nothing selected -> cancel chain
   };
   document.addEventListener('pointermove',move);
   document.addEventListener('pointerup',up);
@@ -2669,9 +2754,10 @@ function onGameStart(m){
   const cat=baseSec<180?'bullet':baseSec<600?'blitz':'rapid';
   // Spectators view from white's POV; players from their own color.
   const color = spec ? 'white' : m.color;
-  state.game={ id:m.game_id, color, fen:m.fen, turn:'white',
+  state.game={ id:m.game_id, color, fen:m.fen, turn:'white', startFen:m.fen,
     whiteMs:m.clocks.white_ms, blackMs:m.clocks.black_ms, opp:spec?null:m.opponent, cat, base:baseSec,
     white:m.white, black:m.black, lastMove:null, moves:[], over:false, drawFrom:null };
+  state.review={active:false,ply:0,plies:[],moves:[],lastMoves:[]}; state.premove=[]; state.reviewEval=null; state.histGame=null;
   lowWarned={white:false,black:false};
   searchUI(false); showView('game'); renderGame(); startClock(); playSound('start');
 }
@@ -2681,8 +2767,19 @@ function onGameState(m){
   state.game.whiteMs=m.white_ms; state.game.blackMs=m.black_ms;
   state.game.lastMove=m.last_move;
   pushMove(prevFen,m.last_move);
-  pendingAnim=m.last_move;
-  sel=null; renderGame(); startClock(); classifyAndSound(prevFen,m.last_move);
+  // keep the review ladder in sync so stepping stays instant (only if already built)
+  if(state.review.plies.length && m.last_move){ state.review.plies.push(m.fen); state.review.lastMoves.push(m.last_move); }
+  // suppress the slide for our own drag move (already animated locally); animate everything else
+  pendingAnim=(optimisticMove && m.last_move===optimisticMove) ? null : m.last_move;
+  optimisticMove=null;
+  classifyAndSound(prevFen,m.last_move);
+  maybeRunPremove(); // play next queued premove if it's now our turn
+  if(state.review.active){
+    // user is browsing a past ply: don't yank the board, just refresh side panels + clocks
+    renderMoveList(); paintClocks(); startClock(); paintReviewBar();
+    return;
+  }
+  sel=null; renderGame(); startClock();
 }
 function pushMove(prevFen,uci){ if(!uci)return; let san=uci;
   if(window.ChessLib&&prevFen){ try{ const c=new window.ChessLib.Chess(prevFen);
@@ -2691,6 +2788,60 @@ function pushMove(prevFen,uci){ if(!uci)return; let san=uci;
   state.game.moves.push(san); }
 function doMove(uci){ if(!state.game.id||state.game.over)return;
   wsSend({type:'move',game_id:state.game.id,uci}); }
+
+// ===== move navigation / review ladder (F1) =====
+// Query an element inside the currently visible view (game + history both use #board/#moveList).
+function vq(s){ return document.querySelector('.view:not(.hidden) '+s) || document.querySelector(s); }
+// Replay a SAN list into per-ply FENs (plies[0]=start) and UCI last-moves.
+function buildPlies(sanMoves){
+  const plies=[START_FEN], lastMoves=[];
+  if(window.ChessLib){ const c=new window.ChessLib.Chess();
+    for(const san of (sanMoves||[])){ let mv=null; try{ mv=c.move(san,{strict:false}); }catch(_){ mv=null; }
+      if(!mv) break; plies.push(c.fen()); lastMoves.push(mv.from+mv.to+(mv.promotion||'')); } }
+  return {plies,lastMoves};
+}
+function ensureReviewPlies(){
+  if(state.review.plies.length) return;
+  const {plies,lastMoves}=buildPlies(state.game.moves);
+  state.review.plies=plies; state.review.lastMoves=lastMoves; state.review.moves=(state.game.moves||[]).slice();
+}
+function reviewGoto(ply){
+  ensureReviewPlies();
+  state.review.active=true;
+  state.review.ply=Math.max(0,Math.min(ply,state.review.plies.length-1));
+  renderBoard(); renderMoveList(); paintReviewBar();
+}
+function reviewStep(d){ ensureReviewPlies();
+  reviewGoto((state.review.active?state.review.ply:state.review.plies.length-1)+d); }
+function reviewLive(){ state.review.active=false; renderBoard(); renderMoveList(); paintReviewBar(); }
+function paintReviewBar(){
+  const s=vq('#rvStatus'); if(!s) return;
+  const n=state.review.plies.length?state.review.plies.length-1:(state.game.moves||[]).length;
+  if(state.review.active){ const behind=n-state.review.ply;
+    s.textContent='move '+state.review.ply+' / '+n+(behind>0&&!state.game.over?' · '+behind+' new ⏭ live':''); }
+  else s.textContent=state.game.over?'end':'live';
+}
+function wireReviewBar(){
+  const f=vq('#rvFirst'),p=vq('#rvPrev'),n=vq('#rvNext'),l=vq('#rvLast');
+  if(f) f.onclick=()=>reviewGoto(0);
+  if(p) p.onclick=()=>reviewStep(-1);
+  if(n) n.onclick=()=>{ ensureReviewPlies();
+    if(state.review.active && state.review.ply>=state.review.plies.length-1) reviewLive(); else reviewStep(1); };
+  if(l) l.onclick=()=>reviewLive();
+  paintReviewBar();
+}
+// Auto-run the next queued premove once it's our turn; validate against the new position.
+function maybeRunPremove(){
+  if(!state.premove.length || state.game.over) return;
+  if(state.game.turn!==state.game.color) return;
+  const pm=state.premove[0];
+  let uci=null;
+  try{ const c=new window.ChessLib.Chess(state.game.fen);
+    const mv=c.move({from:pm.from,to:pm.to,promotion:pm.promo||'q'});
+    if(mv) uci=pm.from+pm.to+(mv.promotion||''); }catch(_){}
+  if(uci){ state.premove.shift(); if(state.review.active) reviewLive(); doMove(uci); } // rest of the chain stays queued
+  else { state.premove=[]; renderBoard(); } // chain broke (illegal) -> cancel remaining
+}
 function renderGame(){
   const g=state.game; const spec=state.spectating;
   const flipTop = g.color==='white'?'black':'white';
@@ -2722,13 +2873,22 @@ function renderGame(){
        <div class="panel" style="min-height:240px;display:flex;flex-direction:column">
          <div class="muted" style="font-size:11px">MOVES</div>
          <div id="moveList" style="flex:1;overflow:auto;font:12px ui-monospace,monospace;margin:6px 0"></div>
-         <div class="muted" id="lastMoveLbl" style="font-size:12px;margin-bottom:8px"></div>
+         <div class="muted" id="lastMoveLbl" style="font-size:12px;margin-bottom:6px"></div>
+         <div id="reviewBar" style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
+           <button class="btn" id="rvFirst" style="padding:4px 9px">⏮</button>
+           <button class="btn" id="rvPrev" style="padding:4px 9px">◀</button>
+           <button class="btn" id="rvNext" style="padding:4px 9px">▶</button>
+           <button class="btn" id="rvLast" style="padding:4px 9px">⏭</button>
+           <span class="muted" id="rvStatus" style="font-size:11px;margin-left:auto"></span>
+         </div>
          ${controls}
        </div>
        ${chatPanelHtml()}
      </div>
    </div>`;
   renderBoard(); renderMoveList(); paintClocks(); renderChat();
+  wireReviewBar();
+  { const b=$('#board'); if(b) b.oncontextmenu=e=>{ e.preventDefault(); clearPremove(); }; } // right-click cancels a premove
   if(spec){
     $('#stopWatchBtn').onclick=stopWatching;
   } else {
@@ -2784,7 +2944,7 @@ function meRatingChip(){ const cat=state.game.cat;
   const r=state.me&&state.me.ratings&&state.me.ratings[cat]; if(!r) return '';
   return `<span class="ratechip">${r.rating}<span class="ratecat">${cat}</span></span>`; }
 function playerCard(name,who,color){
-  const cap=capturedFromFen(state.game.fen);
+  const cap=capturedFromFen(boardFen());
   const myCap=color==='white'?cap.whiteCap:cap.blackCap;
   const adv=color==='white'?cap.diff:-cap.diff;
   const chip=who==='you'?meRatingChip():'';
@@ -2797,19 +2957,27 @@ function playerCard(name,who,color){
     <span class="spacer"></span>
     <span class="clock" id="clk-${color}">—</span></div>`;
 }
-function renderMoveList(){ const box=$('#moveList'); if(!box)return;
-  const mv=state.game.moves, lastIdx=mv.length-1; let html='';
+function renderMoveList(){ const box=vq('#moveList'); if(!box)return;
+  const mv=state.game.moves;
+  // ply currently shown: while reviewing it's review.ply, else the latest. move at array index j -> ply j+1.
+  const curPly=state.review.active?state.review.ply:mv.length;
+  const cell=j=>{ if(j>=mv.length||mv[j]==null) return '<span class="mv"></span>';
+    const ply=j+1, cur=(ply===curPly)?' cur':'';
+    const ev=state.reviewEval&&state.reviewEval[j];
+    const badge=(ev&&typeof reviewBadge==='function')?reviewBadge(ev):'';
+    return `<span class="mv${cur}" data-ply="${ply}">${esc(mv[j])}${badge}</span>`; };
+  let html='';
   for(let i=0;i<mv.length;i+=2){
-    html+=`<div class="mvrow"><span class="mvno">${i/2+1}.</span>`+
-      `<span class="mv${i===lastIdx?' cur':''}">${esc(mv[i]||'')}</span>`+
-      `<span class="mv${i+1===lastIdx?' cur':''}">${esc(mv[i+1]||'')}</span></div>`; }
-  box.innerHTML=html||'<span class="muted">—</span>'; box.scrollTop=box.scrollHeight;
-  const lm=state.game.moves[state.game.moves.length-1];
-  const lbl=$('#lastMoveLbl'); if(lbl) lbl.innerHTML = lm?('last: <b>'+esc(lm)+'</b>'):''; }
+    html+=`<div class="mvrow"><span class="mvno">${i/2+1}.</span>${cell(i)}${cell(i+1)}</div>`; }
+  box.innerHTML=html||'<span class="muted">—</span>';
+  box.querySelectorAll('[data-ply]').forEach(s=>s.onclick=()=>reviewGoto(+s.dataset.ply));
+  const curEl=box.querySelector('.mv.cur'); if(curEl) curEl.scrollIntoView({block:'nearest'}); else box.scrollTop=box.scrollHeight;
+  const lm=mv[mv.length-1];
+  const lbl=vq('#lastMoveLbl'); if(lbl) lbl.innerHTML = lm?('last: <b>'+esc(lm)+'</b>'):''; }
 
 // ===== chat (Phase 7) =====
-function chatPanelHtml(){
-  const spec=state.spectating;
+function chatPanelHtml(ro){
+  const spec=ro||state.spectating;
   return `<div class="panel" id="chatPanel" style="display:flex;flex-direction:column;min-height:170px;max-height:260px">
      <div class="muted" style="font-size:11px">CHAT${spec?' · read-only':''}</div>
      <div id="chatList" class="chatlist"></div>
@@ -2820,7 +2988,7 @@ function chatPanelHtml(){
    </div>`;
 }
 function renderChat(){
-  const list=$('#chatList'); if(!list) return;
+  const list=vq('#chatList'); if(!list) return;
   list.innerHTML = state.chat.length ? state.chat.map(c=>
     `<div class="chatrow ${c.mine?'mine':''}">
        ${c.mine?'':`<span class="chatfrom">${esc(c.from_name||'?')}</span>`}
@@ -2964,7 +3132,8 @@ function classifyAndSound(prevFen,uci){
   let kind='move';
   if(window.ChessLib&&prevFen){ try{ const c=new window.ChessLib.Chess(prevFen);
     const mv=c.move({from:uci.slice(0,2),to:uci.slice(2,4),promotion:uci.slice(4)||undefined});
-    if(mv){ if(mv.flags.includes('k')||mv.flags.includes('q'))kind='castle';
+    if(mv){ if(typeof c.isCheckmate==='function' && c.isCheckmate()) return; // mate -> let game.over play the mate sound only
+      if(mv.flags.includes('k')||mv.flags.includes('q'))kind='castle';
       else if(mv.flags.includes('c')||mv.flags.includes('e'))kind='capture';
       if(c.inCheck())kind='check'; } }catch(_){}
   } else { const before=fenToBoard(prevFen); if(before[uci.slice(2,4)])kind='capture'; }
@@ -2978,7 +3147,7 @@ refreshMuteBtn();
 
 // ===== game over =====
 function onGameOver(m){
-  state.game.over=true; stopClock(); state.game.drawFrom=null; renderDrawPopup(); clearOpponentBanner();
+  state.game.over=true; stopClock(); state.game.drawFrom=null; state.premove=[]; renderDrawPopup(); clearOpponentBanner();
   if(state.spectating){
     playSound('over');
     const res=m.result==='1-0'?'White wins':m.result==='0-1'?'Black wins':'Draw';
@@ -3010,11 +3179,13 @@ function onGameOver(m){
     <div class="muted">vs ${esc(state.game.opp||'opponent')} · ${esc(m.reason)}</div>
     ${deltaHtml}
     <div id="rematchArea" style="margin-top:14px"></div>
-    <div style="display:flex;gap:8px;justify-content:center;margin-top:12px">
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
       <button class="btn primary" id="ovlNew">New game ▸</button>
+      <button class="btn" id="ovlReview">⚡ Review</button>
       <button class="btn" id="ovlLobby">Back to lobby</button>
     </div></div></div>`;
   paintRematchArea();
+  $('#ovlReview').onclick=()=>{ $('#overlayRoot').innerHTML=''; if(typeof reviewGame==='function') reviewGame(); };
   $('#ovlNew').onclick=()=>{ $('#overlayRoot').innerHTML=''; showView('lobby');
     const inc=(TIME_CONTROLS.find(t=>t.base===state.game.base)||{}).inc||0;
     wsSend({type:'queue.join',category:state.game.cat,base:state.game.base,increment:inc}); searchUI(true); };
@@ -3076,6 +3247,180 @@ async function loadHistory(){ const box=$('#historyList'); if(!box)return;
         <span>vs ${esc(x.opponent)}</span><span class="muted">${esc(x.category)}</span>
         <span>${x.rating_before}→${x.rating_after}</span></div>`; }).join('');
   }catch(_){ box.innerHTML='<span class="bad">failed to load</span>'; } }
+
+// ===== history view (F1) =====
+function resultLabel(h){ if(!h) return '';
+  const r=h.result;
+  if(h.spectatorView){ const t=r==='1-0'?'White wins':r==='0-1'?'Black wins':r==='1/2-1/2'?'Draw':'—'; return t+' · '+esc(h.reason||''); }
+  if(r==='1/2-1/2') return 'Draw · '+esc(h.reason||'');
+  const youWon=(h.color==='white'&&r==='1-0')||(h.color==='black'&&r==='0-1');
+  return (youWon?'You won':'You lost')+' · '+esc(h.reason||''); }
+// switch the visible view WITHOUT triggering its list re-render (used to drop straight into a replay)
+function activateView(name){ state.view=name;
+  ['landing','lobby','game','leaderboard','history','admin'].forEach(v=>$('#view-'+v).classList.toggle('hidden',v!==name));
+  document.querySelectorAll('.navlink[data-view]').forEach(n=>n.classList.toggle('active',n.dataset.view===name)); }
+async function renderHistory(){
+  const box=$('#view-history'); if(!box) return;
+  box.innerHTML=`<div class="panel" style="max-width:720px;margin:0 auto">
+     <div class="muted" style="font-size:11px;margin-bottom:8px">GAME HISTORY</div>
+     <div id="histList"><div class="muted">loading…</div></div></div>`;
+  try{ const r=await api('/api/games?limit=50'); const g=await r.json();
+    const list=$('#histList'); if(!list) return;
+    if(!g.length){ list.innerHTML='<div class="muted">no games yet — play one!</div>'; return; }
+    list.innerHTML=g.map((x,i)=>{ const wld=resultFor(x); const cls=wld==='W'?'ok':wld==='L'?'bad':'muted';
+      return `<div class="histrow" data-i="${i}" style="display:grid;grid-template-columns:22px 1fr auto auto;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer">
+        <span class="${cls}" style="font-weight:800">${wld}</span>
+        <span>vs <b>${esc(x.opponent||'?')}</b></span>
+        <span class="muted" style="font-size:12px">${esc(x.category)} · ${esc(x.reason||'')}</span>
+        <span class="pill ${cls}">${x.rating_before}→${x.rating_after}</span></div>`; }).join('');
+    list.querySelectorAll('.histrow').forEach(elm=>elm.onclick=()=>openGameReview(g[+elm.dataset.i]));
+  }catch(_){ const l=$('#histList'); if(l) l.innerHTML='<div class="bad">failed to load</div>'; }
+}
+async function openGameReview(row, from){
+  state.histReturn = from || 'history';
+  activateView('history');
+  const box=$('#view-history'); if(!box) return;
+  box.innerHTML='<div class="panel"><div class="muted">loading game…</div></div>';
+  let detail;
+  try{ const r=await api('/api/games/'+encodeURIComponent(row.id)); if(!r.ok) throw 0; detail=await r.json(); }
+  catch(_){ box.innerHTML='<div class="panel"><div class="bad">could not load that game</div></div>'; return; }
+  const gd=detail.game||{}; const me=state.me&&state.me.uid;
+  const isParticipant = gd.white_id===me || gd.black_id===me;
+  const adminRow = (row.white!==undefined || row.black!==undefined); // opened from admin: explicit names, neutral POV
+  const myColor = gd.white_id===me ? 'white' : (gd.black_id===me ? 'black' : 'white');
+  let moves=[]; try{ if(window.ChessLib&&gd.pgn){ const c=new window.ChessLib.Chess(); c.loadPgn(gd.pgn,{strict:false}); moves=c.history(); } }catch(_){}
+  const {plies,lastMoves}=buildPlies(moves);
+  const myName=(state.me&&state.me.name)||'You';
+  const whiteName = adminRow ? (row.white||'White') : (myColor==='white'?myName:row.opponent);
+  const blackName = adminRow ? (row.black||'Black') : (myColor==='black'?myName:row.opponent);
+  state.histGame={id:row.id, color:myColor, result:gd.result, reason:gd.reason, category:row.category, white:whiteName, black:blackName, spectatorView:!isParticipant};
+  state.spectating=false; state.premove=[]; state.reviewEval=null;
+  state.game={ id:row.id, color:myColor, fen:plies[plies.length-1], turn:'white', startFen:START_FEN,
+    whiteMs:null, blackMs:null, opp:(myColor==='white'?blackName:whiteName), cat:row.category, base:0,
+    white:whiteName, black:blackName, moves, over:true, drawFrom:null, lastMove:null };
+  state.review={active:true, ply:plies.length-1, plies, lastMoves, moves:moves.slice()};
+  state.chat=(detail.messages||[]).map(x=>({from_name:x.sender_name,text:x.body,ts:x.ts,mine:x.sender_id===me}));
+  renderHistoryDetail();
+}
+function renderHistoryDetail(){
+  const g=state.game; const flipTop=g.color==='white'?'black':'white';
+  const spec=state.histGame&&state.histGame.spectatorView; // admin/non-participant: don't show "you"
+  const topName=g.color==='white'?g.black:g.white, botName=g.color==='white'?g.white:g.black;
+  const backLabel = state.histReturn==='admin' ? '← Admin' : '← History';
+  $('#view-history').innerHTML=`
+   <div style="display:grid;grid-template-columns:auto 280px;gap:16px;align-items:start;justify-content:center">
+     <div>
+       ${playerCard(topName,'opp',flipTop)}
+       <div class="boardWrap" style="margin:8px 0"><div id="board"></div></div>
+       ${playerCard(botName,spec?'opp':'you',g.color)}
+     </div>
+     <div style="display:flex;flex-direction:column;gap:12px">
+       <div class="panel" style="min-height:240px;display:flex;flex-direction:column">
+         <div style="display:flex;justify-content:space-between;align-items:center">
+           <span class="muted" style="font-size:11px">MOVES</span>
+           <button class="btn ghost" id="histBack" style="padding:2px 8px;font-size:12px">${backLabel}</button>
+         </div>
+         <div class="me" style="font-size:13px;margin:4px 0">${resultLabel(state.histGame)}</div>
+         <div id="moveList" style="flex:1;overflow:auto;font:12px ui-monospace,monospace;margin:6px 0"></div>
+         <div class="muted" id="lastMoveLbl" style="font-size:12px;margin-bottom:6px"></div>
+         <div id="reviewBar" style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
+           <button class="btn" id="rvFirst" style="padding:4px 9px">⏮</button>
+           <button class="btn" id="rvPrev" style="padding:4px 9px">◀</button>
+           <button class="btn" id="rvNext" style="padding:4px 9px">▶</button>
+           <button class="btn" id="rvLast" style="padding:4px 9px">⏭</button>
+           <span class="muted" id="rvStatus" style="font-size:11px;margin-left:auto"></span>
+         </div>
+         <div id="reviewSummary"></div>
+         <button class="btn primary" id="reviewBtn" style="width:100%">⚡ Review game</button>
+       </div>
+       ${chatPanelHtml(true)}
+     </div>
+   </div>`;
+  renderBoard(); renderMoveList(); renderChat(); wireReviewBar();
+  $('#histBack').onclick=()=>{ state.review={active:false,ply:0,plies:[],moves:[],lastMoves:[]}; state.histGame=null; state.reviewEval=null; showView(state.histReturn||'history'); };
+  const rb=$('#reviewBtn'); if(rb) rb.onclick=()=>{ if(typeof reviewGame==='function') reviewGame(); };
+}
+
+// ===== admin dashboard (F4) =====
+function renderAdmin(){
+  const box=$('#view-admin'); if(!box) return;
+  if(!state.me||!state.me.is_admin){ box.innerHTML='<div class="panel" style="max-width:420px;margin:6vh auto"><div class="bad">Not authorized.</div></div>'; return; }
+  if(!state.adminTab) state.adminTab='users';
+  box.innerHTML=`<div class="panel" style="max-width:960px;margin:0 auto">
+     <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+       <button class="btn ${state.adminTab==='users'?'primary':''}" data-atab="users">Users &amp; ratings</button>
+       <button class="btn ${state.adminTab==='games'?'primary':''}" data-atab="games">Games &amp; chat</button>
+       <span class="pill warn" style="margin-left:auto">admin · reversible</span>
+     </div>
+     <div id="adminBody"><div class="muted">loading…</div></div>
+   </div>`;
+  document.querySelectorAll('[data-atab]').forEach(b=>b.onclick=()=>{ state.adminTab=b.dataset.atab; renderAdmin(); });
+  if(state.adminTab==='users') adminLoadUsers(); else adminLoadGames();
+}
+function adminFlash(b,ok){ b.textContent=ok?'✓':'✕'; setTimeout(()=>{b.textContent='✓';},1200); }
+async function adminLoadUsers(){
+  const box=$('#adminBody'); if(!box) return;
+  try{ const r=await api('/api/admin/users'); if(!r.ok) throw 0; const users=await r.json();
+    const cell=(u,cat)=>{ const rr=(u.ratings&&u.ratings[cat])||{rating:0,games_played:0};
+      return `<td><div style="display:flex;gap:3px;align-items:center">
+        <input data-uid="${esc(u.id)}" data-cat="${cat}" data-fld="rating" value="${rr.rating}" style="width:54px;padding:3px 5px">
+        <input data-uid="${esc(u.id)}" data-cat="${cat}" data-fld="games" value="${rr.games_played}" title="games played" style="width:42px;padding:3px 5px;opacity:.65">
+        <button class="btn" data-saver="${esc(u.id)}|${cat}" style="padding:2px 7px">✓</button></div></td>`; };
+    box.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr class="muted" style="text-align:left;font-size:11px"><th>Player</th><th>Email</th><th>Bullet</th><th>Blitz</th><th>Rapid</th></tr></thead>
+      <tbody>${users.map(u=>`<tr style="border-bottom:1px solid var(--line)">
+        <td><div style="display:flex;gap:4px"><input data-namefor="${esc(u.id)}" value="${esc(u.display_name)}" style="width:118px;padding:3px 6px"><button class="btn" data-savename="${esc(u.id)}" style="padding:2px 7px">✓</button></div></td>
+        <td class="muted" style="font-size:11px">${esc(u.email)}</td>${cell(u,'bullet')}${cell(u,'blitz')}${cell(u,'rapid')}</tr>`).join('')}</tbody></table>`;
+    box.querySelectorAll('[data-savename]').forEach(b=>b.onclick=async()=>{
+      const id=b.dataset.savename, name=box.querySelector('[data-namefor="'+CSS.escape(id)+'"]').value.trim(); b.textContent='…';
+      const r=await api('/api/admin/users/'+encodeURIComponent(id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({display_name:name})});
+      adminFlash(b,r.ok); flashNotice(r.ok?'name updated':(r.status===409?'name taken':'update failed')); });
+    box.querySelectorAll('[data-saver]').forEach(b=>b.onclick=async()=>{
+      const [id,cat]=b.dataset.saver.split('|');
+      const rt=box.querySelector('input[data-uid="'+CSS.escape(id)+'"][data-cat="'+cat+'"][data-fld="rating"]').value;
+      const gp=box.querySelector('input[data-uid="'+CSS.escape(id)+'"][data-cat="'+cat+'"][data-fld="games"]').value; b.textContent='…';
+      const r=await api('/api/admin/users/'+encodeURIComponent(id)+'/ratings/'+cat,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({rating:+rt||0,games_played:+gp||0})});
+      adminFlash(b,r.ok); flashNotice(r.ok?'rating updated':'update failed'); });
+  }catch(_){ box.innerHTML='<div class="bad">failed to load users</div>'; }
+}
+async function adminLoadGames(){
+  const box=$('#adminBody'); if(!box) return;
+  try{ const r=await api('/api/admin/games?limit=100'); if(!r.ok) throw 0; const games=await r.json();
+    box.innerHTML = games.length?`<table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr class="muted" style="text-align:left;font-size:11px"><th>White</th><th>Black</th><th>Cat</th><th>Result</th><th>Status</th><th></th></tr></thead>
+      <tbody>${games.map(g=>`<tr style="border-bottom:1px solid var(--line);${g.voided?'opacity:.5':''}">
+        <td>${esc(g.white||'?')}</td><td>${esc(g.black||'?')}</td><td class="muted">${esc(g.category||'')}</td>
+        <td>${esc(g.result||'·')} ${g.voided?'<span class="pill warn">void</span>':''}</td>
+        <td class="muted" style="font-size:11px">${esc(g.status||'')}</td>
+        <td style="white-space:nowrap;text-align:right">
+          <button class="btn" data-open="${esc(g.id)}" style="padding:2px 8px">Open</button>
+          <button class="btn" data-void="${esc(g.id)}" data-on="${g.voided?1:0}" style="padding:2px 8px">${g.voided?'Un-void':'Void'}</button>
+          <button class="btn ghost" data-msgs="${esc(g.id)}" style="padding:2px 8px">Chat</button></td></tr>
+        <tr id="msgs-${esc(g.id)}" style="display:none"><td colspan="6" style="background:#0003"></td></tr>`).join('')}</tbody></table>`
+      : '<div class="muted">no games yet</div>';
+    box.querySelectorAll('[data-void]').forEach(b=>b.onclick=async()=>{
+      const id=b.dataset.void, on=b.dataset.on==='1'; b.textContent='…';
+      const r=await api('/api/admin/games/'+encodeURIComponent(id)+'/void',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voided:!on})});
+      if(r.ok){ flashNotice(!on?'game voided · ratings reverted':'game restored'); adminLoadGames(); } else { b.textContent=on?'Un-void':'Void'; flashNotice('failed'); } });
+    box.querySelectorAll('[data-msgs]').forEach(b=>b.onclick=()=>adminToggleMsgs(b.dataset.msgs));
+    box.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{ const g=games.find(x=>x.id===b.dataset.open); if(g) openGameReview({id:g.id,white:g.white,black:g.black,category:g.category},'admin'); });
+  }catch(_){ box.innerHTML='<div class="bad">failed to load games</div>'; }
+}
+function adminToggleMsgs(id){ const row=document.getElementById('msgs-'+id); if(!row) return;
+  if(row.style.display!=='none'){ row.style.display='none'; return; } row.style.display=''; adminFillMsgs(id); }
+async function adminFillMsgs(id){
+  const row=document.getElementById('msgs-'+id); if(!row) return; const cell=row.firstElementChild;
+  cell.innerHTML='<span class="muted" style="font-size:12px">loading…</span>';
+  try{ const r=await api('/api/admin/games/'+encodeURIComponent(id)+'/messages'); const msgs=await r.json();
+    cell.innerHTML = msgs.length? msgs.map(m=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 6px;${m.hidden?'opacity:.45':''}">
+      <b style="font-size:12px">${esc(m.sender_name)}:</b><span style="flex:1">${esc(m.body)}</span>
+      <button class="btn" data-hide="${m.id}" data-on="${m.hidden?1:0}" style="padding:1px 7px">${m.hidden?'Unhide':'Hide'}</button></div>`).join('')
+      : '<span class="muted" style="font-size:12px;padding:6px">no messages</span>';
+    cell.querySelectorAll('[data-hide]').forEach(hb=>hb.onclick=async()=>{ const mid=hb.dataset.hide, on=hb.dataset.on==='1';
+      const rr=await api('/api/admin/messages/'+mid+'/hide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hidden:!on})});
+      if(rr.ok) adminFillMsgs(id); else flashNotice('failed'); });
+  }catch(_){ cell.innerHTML='<span class="bad">failed to load</span>'; }
+}
 
 // ===== leaderboard =====
 function renderLeaderboard(){

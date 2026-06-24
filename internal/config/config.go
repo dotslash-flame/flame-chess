@@ -21,6 +21,20 @@ type Config struct {
 	RematchTTLSecs     int
 	StartingRating     int
 	DevLogin           bool
+	AdminEmails        []string
+}
+
+func (c *Config) IsAdmin(email string) bool {
+	e := strings.ToLower(strings.TrimSpace(email))
+	if e == "" {
+		return false
+	}
+	for _, a := range c.AdminEmails {
+		if strings.ToLower(a) == e {
+			return true
+		}
+	}
+	return false
 }
 
 func Load() (*Config, error) {
@@ -35,6 +49,7 @@ func Load() (*Config, error) {
 		PostLoginRedirect:  getEnv("APP_REDIRECT_URL", "/"),
 		CORSAllowedOrigins: splitAndTrim(os.Getenv("CORS_ALLOWED_ORIGINS")),
 		DevLogin:           getEnv("DEV_LOGIN", "true") != "false",
+		AdminEmails:        splitAndTrim(os.Getenv("ADMIN_EMAILS")),
 	}
 
 	grace, err := getEnvInt("RECONNECT_GRACE_SECONDS", 30)

@@ -130,3 +130,40 @@ func (f *fakeStore) GameByID(_ context.Context, gameID string) (store.GameRow, e
 func (f *fakeStore) GameMessages(_ context.Context, gameID string) ([]store.ChatRow, error) {
 	return f.messages[gameID], nil
 }
+
+func (f *fakeStore) AdminListUsersWithRatings(_ context.Context, limit int) ([]store.AdminUser, error) {
+	var out []store.AdminUser
+	for id, u := range f.byID {
+		out = append(out, store.AdminUser{ID: id, Email: u.Email, DisplayName: u.DisplayName, Ratings: f.ratings[id]})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) AdminSetRating(_ context.Context, userID, category string, rating, gamesPlayed int) error {
+	if f.ratings[userID] == nil {
+		f.ratings[userID] = map[string]store.CategoryRating{}
+	}
+	f.ratings[userID][category] = store.CategoryRating{Rating: rating, GamesPlayed: gamesPlayed}
+	return nil
+}
+
+func (f *fakeStore) AdminListGames(_ context.Context, limit int) ([]store.AdminGameRow, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) AdminGamesByUser(_ context.Context, userID string, limit int) ([]store.AdminGameRow, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) AdminVoidGame(_ context.Context, gameID string, voided bool) error { return nil }
+
+func (f *fakeStore) AdminSetMessageHidden(_ context.Context, msgID int64, hidden bool) error {
+	return nil
+}
+
+func (f *fakeStore) AdminGameMessages(_ context.Context, gameID string) ([]store.AdminChatRow, error) {
+	return nil, nil
+}

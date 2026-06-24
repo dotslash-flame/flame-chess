@@ -10,6 +10,14 @@ import (
 
 type Querier interface {
 	AbortGame(ctx context.Context, arg AbortGameParams) error
+	AdminAllRatings(ctx context.Context) ([]Rating, error)
+	AdminGameMessages(ctx context.Context, gameID string) ([]AdminGameMessagesRow, error)
+	AdminGamesByUser(ctx context.Context, arg AdminGamesByUserParams) ([]AdminGamesByUserRow, error)
+	AdminListGames(ctx context.Context, limit int32) ([]AdminListGamesRow, error)
+	AdminListUsers(ctx context.Context, limit int32) ([]AdminListUsersRow, error)
+	AdminSetGameVoided(ctx context.Context, arg AdminSetGameVoidedParams) error
+	AdminSetMessageHidden(ctx context.Context, arg AdminSetMessageHiddenParams) error
+	AdminSetRating(ctx context.Context, arg AdminSetRatingParams) error
 	// Seed the three category rows at the default rating if absent.
 	EnsureRatings(ctx context.Context, userID string) error
 	FinishGame(ctx context.Context, arg FinishGameParams) error

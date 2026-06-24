@@ -37,13 +37,22 @@ func NewRouter(h *hub.Hub, cfg *config.Config, st Store) http.Handler {
 	}
 
 	mux.HandleFunc("POST /auth/logout", logoutHandler(cp))
-	mux.HandleFunc("GET /api/me", meHandler(st, secret))
-	mux.HandleFunc("PATCH /api/me", patchMeHandler(st, secret, cp))
+	mux.HandleFunc("GET /api/me", meHandler(st, secret, cfg))
+	mux.HandleFunc("PATCH /api/me", patchMeHandler(st, secret, cp, cfg))
 	mux.HandleFunc("GET /api/leaderboard", leaderboardHandler(st, secret))
 	mux.HandleFunc("GET /api/games", gamesHandler(st, secret))
 	mux.HandleFunc("GET /api/games/live", liveGamesHandler(h, secret))
 	mux.HandleFunc("GET /api/games/{id}", gameDetailHandler(st, secret))
 	mux.HandleFunc("POST /api/challenges", challengesHandler(h, secret))
+
+	mux.HandleFunc("GET /api/admin/users", requireAdmin(cfg, secret, adminListUsersHandler(st)))
+	mux.HandleFunc("PATCH /api/admin/users/{id}", requireAdmin(cfg, secret, adminUpdateUserHandler(st)))
+	mux.HandleFunc("PUT /api/admin/users/{id}/ratings/{category}", requireAdmin(cfg, secret, adminSetRatingHandler(st)))
+	mux.HandleFunc("GET /api/admin/games", requireAdmin(cfg, secret, adminListGamesHandler(st)))
+	mux.HandleFunc("POST /api/admin/games/{id}/void", requireAdmin(cfg, secret, adminVoidGameHandler(st)))
+	mux.HandleFunc("GET /api/admin/games/{id}/messages", requireAdmin(cfg, secret, adminGameMessagesHandler(st)))
+	mux.HandleFunc("POST /api/admin/messages/{id}/hide", requireAdmin(cfg, secret, adminHideMessageHandler(st)))
+
 	mux.Handle("GET /ws", ws.Handler(h, secret))
 	return corsMiddleware(cfg.CORSAllowedOrigins, mux)
 }

@@ -29,6 +29,7 @@ services:
       GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:?set GOOGLE_CLIENT_ID in .env}"
       GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:?set GOOGLE_CLIENT_SECRET in .env}"
       GOOGLE_REDIRECT_URL: "${GOOGLE_REDIRECT_URL:-http://localhost:8080/auth/google/callback}"
+      ADMIN_EMAILS: "${ADMIN_EMAILS:-}"
     ports:
       - "8080:8080"
 
