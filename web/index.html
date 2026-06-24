@@ -167,8 +167,11 @@
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:32px;}
   #dlLoader .dl-left .dl-inner{left:0;} #dlLoader .dl-right .dl-inner{left:-50vw;}
   #dlLoader .dl-heartwrap{position:relative;width:150px;height:150px;display:flex;align-items:center;justify-content:center;
-    isolation:isolate;animation:dlbeat 1.5s ease-in-out infinite;will-change:transform;}
-  #dlLoader .dl-heart{width:100%;height:100%;filter:drop-shadow(0 10px 30px rgba(255,45,111,.5));animation:dlglow 1.5s ease-in-out infinite;}
+    isolation:isolate;will-change:transform;}
+  #dlLoader .dl-heart{width:100%;height:100%;filter:drop-shadow(0 10px 30px rgba(255,45,111,.5));}
+  /* both halves' beat starts in the SAME frame (parent class) so the two halves stay in phase */
+  #dlLoader.dl-go .dl-heartwrap{animation:dlbeat 1.5s ease-in-out infinite;}
+  #dlLoader.dl-go .dl-heart{animation:dlglow 1.5s ease-in-out infinite;}
   #dlLoader .dl-logo{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);width:58px;height:auto;
     filter:invert(1);mix-blend-mode:screen;}
   #dlLoader .dl-cap{display:flex;flex-direction:column;align-items:center;gap:9px;}
@@ -3610,6 +3613,8 @@ function clearOpponentBanner(){ clearInterval(oppBannerTimer); oppBannerTimer=nu
 const DL = (()=>{
   const loader=document.getElementById('dlLoader');
   if(!loader) return { done(){} };
+  // start BOTH heart halves' beat in the same frame so they stay in phase (no split-beat glitch)
+  requestAnimationFrame(()=>requestAnimationFrame(()=>loader.classList.add('dl-go')));
   let opened=false, bootReady=false, minReady=false, rafs=[];
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion:reduce)').matches;
   const CH="01./<>{}#$%*+=ABCXYZ アイウエオカキクケコサシスセソタチツabcdef".split("");
