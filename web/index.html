@@ -46,19 +46,19 @@
   input{background:#1a1816;color:var(--txt);border:1px solid #4a463f;border-radius:8px;padding:8px 10px;font:inherit;transition:border-color .15s,box-shadow .15s;}
   input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px #ff7a2f33;}
   input.short{width:70px;}
-  .view{padding:22px 18px;max-width:1080px;margin:0 auto;}
+  .view{padding:22px 18px;max-width:1180px;margin:0 auto;}
   .muted{color:var(--muted);} .me{color:var(--accent);font-weight:700;}
   .avatar{width:26px;height:26px;border-radius:50%;flex:none;overflow:hidden;position:relative;
           background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 0 0 2px #0003;
           display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;}
   .avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
   .avatar i{font-style:normal;font-weight:800;font-size:12px;color:#1a1411;}
-  .avatar.lg{width:44px;height:44px;} .avatar.lg i{font-size:18px;}
+  .avatar.lg{width:50px;height:50px;} .avatar.lg i{font-size:20px;}
 
-  .boardWrap{position:relative;width:min(76vw,560px);aspect-ratio:1;}
+  .boardWrap{position:relative;width:min(82vh, calc(100vw - 392px), 760px);aspect-ratio:1;}
   #board{width:100%;height:100%;display:grid;grid-template-columns:repeat(8,1fr);
-         grid-template-rows:repeat(8,1fr);border-radius:10px;overflow:hidden;
-         box-shadow:var(--shadow),0 0 0 1px #00000055,0 0 0 6px #1c1a17,0 0 0 7px #ffffff0d;}
+         grid-template-rows:repeat(8,1fr);border-radius:12px;overflow:hidden;
+         box-shadow:var(--shadow),0 0 0 1px #00000055,0 0 0 8px #1c1a17,0 0 0 9px #ffffff12,0 18px 50px #000a;}
   .sq{position:relative;display:flex;align-items:center;justify-content:center;
       line-height:1;cursor:pointer;user-select:none;touch-action:none;}
   .sq.l{background:var(--light);} .sq.d{background:var(--dark);}
@@ -82,13 +82,14 @@
   @media(prefers-reduced-motion:reduce){ .sq .piece{transition:none!important;} }
 
   .ovl{position:fixed;inset:0;background:#000a;backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:50;}
-  .clock{font:700 19px 'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;letter-spacing:.5px;
-         background:#1a1816;border:1px solid var(--line);border-radius:8px;padding:5px 12px;min-width:86px;text-align:center;color:var(--txt);
+  .clock{font:700 25px 'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;letter-spacing:.5px;
+         background:#1a1816;border:1px solid var(--line);border-radius:10px;padding:8px 18px;min-width:112px;text-align:center;color:var(--txt);
          transition:background .15s,color .15s,box-shadow .15s;}
   .clock.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1411;border-color:transparent;box-shadow:0 4px 14px #ff7a2f55;}
   .clock.low{color:var(--bad);} .clock.active.low{color:#3a0f0f;background:linear-gradient(135deg,#ff8a8a,#ffb056);}
 
-  .pcard{display:flex;align-items:center;gap:10px;padding:8px 12px;}
+  .pcard{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:14px;}
+  .pcard-name>b{font-size:16px;}
   .pcard-main{display:flex;flex-direction:column;gap:2px;min-width:0;}
   .pcard-name{display:flex;align-items:center;gap:8px;line-height:1.2;}
   .ratechip{font:700 11px 'JetBrains Mono',ui-monospace,monospace;color:var(--txt);background:#0004;border:1px solid var(--line);
@@ -113,6 +114,23 @@
   .mvrow .mvno{color:var(--muted);}
   .mvrow .mv{padding:0 5px;border-radius:5px;}
   .mvrow .mv.cur{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1411;font-weight:700;}
+  /* game review panel */
+  .rv-head{font:700 11px 'Inter',sans-serif;letter-spacing:1.5px;color:var(--muted);margin:2px 0 8px;}
+  .rv-prog{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--txt);margin-bottom:7px;}
+  .rv-bar{height:6px;background:#0005;border-radius:4px;overflow:hidden;}
+  .rv-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .2s ease;}
+  .rv-acc{display:flex;gap:8px;margin-bottom:10px;}
+  .rv-acc .card{flex:1;background:#0003;border:1px solid var(--line);border-radius:12px;padding:9px 8px 7px;text-align:center;}
+  .rv-acc .card .who{display:block;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;}
+  .rv-acc .card .pct{font:800 26px 'JetBrains Mono',ui-monospace,monospace;color:var(--accent2);line-height:1;}
+  .rv-acc .card .pct small{font-size:13px;opacity:.7;}
+  .rv-acc .card .lbl{display:block;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:3px;}
+  .rv-tbl{width:100%;border-collapse:collapse;font-size:13px;}
+  .rv-tbl th{font:600 10px 'Inter',sans-serif;letter-spacing:.5px;color:var(--muted);text-align:right;padding:3px 6px;}
+  .rv-tbl th:first-child{text-align:left;}
+  .rv-tbl td{padding:4px 6px;border-top:1px solid var(--line);text-transform:capitalize;}
+  .rv-tbl td.n{text-align:right;font:700 13px 'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;text-transform:none;}
+  .rv-glyph{display:inline-block;min-width:20px;font-weight:800;margin-right:7px;}
 
   .result{position:relative;overflow:hidden;animation:pop .22s cubic-bezier(.22,.61,.36,1);}
   .result::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;}
@@ -2920,35 +2938,44 @@ async function reviewGame(){
   if(!plies || plies.length<2){ flashNotice('No moves to review'); return; }
   const rb=vq('#reviewBtn'); if(rb) rb.disabled=true;
   REVIEW.running=true; REVIEW.cancel=false;
-  reviewSetStatus('<span class="muted">loading engine…</span> <button class="btn ghost" id="reviewCancel" style="padding:1px 8px">cancel</button>');
+  reviewSetStatus(reviewProgressHtml('Loading engine…',0));
   try{ await reviewEngineInit(); }
-  catch(_){ REVIEW.running=false; if(rb) rb.disabled=false; reviewSetStatus('<span class="bad">Engine unavailable — needs internet (CDN). Try again.</span>'); return; }
+  catch(_){ REVIEW.running=false; if(rb) rb.disabled=false; reviewSetStatus('<div class="rv-head">GAME REVIEW</div><div class="bad" style="font-size:12px">Engine unavailable — needs internet (loads from CDN). Try again.</div>'); return; }
   const N=plies.length-1, posEval=new Array(plies.length);
   for(let i=0;i<plies.length;i++){
-    if(REVIEW.cancel){ REVIEW.running=false; if(rb) rb.disabled=false; reviewSetStatus('<span class="muted">review cancelled</span>'); return; }
-    reviewSetStatus('analysing '+i+' / '+N+' <button class="btn ghost" id="reviewCancel" style="padding:1px 8px">cancel</button>');
+    if(REVIEW.cancel){ REVIEW.running=false; if(rb) rb.disabled=false; reviewSetStatus('<div class="rv-head">GAME REVIEW</div><div class="muted" style="font-size:12px">Review cancelled.</div>'); return; }
+    reviewSetStatus(reviewProgressHtml('Analysing move '+Math.min(i+1,N)+' of '+N, Math.round(i/N*100)));
     posEval[i]=await reviewAnalyze(plies[i]);
   }
-  const counts={brilliant:0,great:0,best:0,excellent:0,good:0,inaccuracy:0,mistake:0,blunder:0};
+  const counts={white:{},black:{}};
   const accSum={white:0,black:0}, accN={white:0,black:0};
   state.reviewEval=new Array(lastMoves.length);
   for(let i=0;i<lastMoves.length;i++){
     const r=reviewClassify(i,posEval,lastMoves,plies); if(!r) continue;
     state.reviewEval[i]={cls:r.cls,cpl:r.cpl};
-    counts[r.cls]=(counts[r.cls]||0)+1;
-    const col=(i%2===0)?'white':'black'; accSum[col]+=r.acc; accN[col]++;
+    const col=(i%2===0)?'white':'black'; counts[col][r.cls]=(counts[col][r.cls]||0)+1; accSum[col]+=r.acc; accN[col]++;
   }
   REVIEW.running=false; if(rb) rb.disabled=false;
   const accW=accN.white?Math.round(accSum.white/accN.white):0, accB=accN.black?Math.round(accSum.black/accN.black):0;
   const wName=esc(state.game.white||'White'), bName=esc(state.game.black||'Black');
+  const order=['brilliant','great','best','excellent','good','inaccuracy','mistake','blunder'];
+  const rows=order.filter(k=>counts.white[k]||counts.black[k]).map(k=>{ const b=REVIEW_BADGES[k];
+    return `<tr><td><span class="rv-glyph" style="color:${b.c}">${b.t}</span>${k}</td>
+      <td class="n">${counts.white[k]||0}</td><td class="n">${counts.black[k]||0}</td></tr>`; }).join('');
   reviewSetStatus(
-    `<div style="display:flex;gap:10px;justify-content:space-between;font-size:12px;margin-bottom:6px">
-       <span><b>${wName}</b> · accuracy <b style="color:var(--accent2)">${accW}%</b></span>
-       <span><b>${bName}</b> · accuracy <b style="color:var(--accent2)">${accB}%</b></span></div>
-     <div style="font-size:11px;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px">
-       ${['brilliant','great','best','excellent','good','inaccuracy','mistake','blunder'].filter(k=>counts[k]).map(k=>`<span style="color:${REVIEW_BADGES[k].c}">${REVIEW_BADGES[k].t} ${k} ${counts[k]}</span>`).join('')}
-     </div>`);
+    `<div class="rv-head">GAME REVIEW</div>
+     <div class="rv-acc">
+       <div class="card"><span class="who">${wName}</span><span class="pct">${accW}<small>%</small></span><span class="lbl">accuracy</span></div>
+       <div class="card"><span class="who">${bName}</span><span class="pct">${accB}<small>%</small></span><span class="lbl">accuracy</span></div>
+     </div>
+     <table class="rv-tbl"><thead><tr><th>Move quality</th><th title="${wName}">W</th><th title="${bName}">B</th></tr></thead>
+       <tbody>${rows||'<tr><td class="muted" colspan="3">no moves</td></tr>'}</tbody></table>`);
   renderMoveList();
+}
+function reviewProgressHtml(label,pct){
+  return `<div class="rv-head">GAME REVIEW</div>
+    <div class="rv-prog"><span>${esc(label)}</span><button class="btn ghost" id="reviewCancel" style="padding:1px 9px;font-size:12px">Cancel</button></div>
+    <div class="rv-bar"><i style="width:${pct}%"></i></div>`;
 }
 function renderGame(){
   const g=state.game; const spec=state.spectating;
@@ -2971,7 +2998,7 @@ function renderGame(){
          <button class="btn" id="drawNo">Decline</button>
        </div>`;
   $('#view-game').innerHTML=`
-   <div style="display:grid;grid-template-columns:auto 280px;gap:16px;align-items:start;justify-content:center">
+   <div style="display:grid;grid-template-columns:auto 320px;gap:20px;align-items:start;justify-content:center">
      <div>
        ${playerCard(topName,'opp',flipTop)}
        <div class="boardWrap" style="margin:8px 0"><div id="board"></div></div>
@@ -3417,7 +3444,7 @@ function renderHistoryDetail(){
   const topName=g.color==='white'?g.black:g.white, botName=g.color==='white'?g.white:g.black;
   const backLabel = state.histReturn==='admin' ? '← Admin' : '← History';
   $('#view-history').innerHTML=`
-   <div style="display:grid;grid-template-columns:auto 280px;gap:16px;align-items:start;justify-content:center">
+   <div style="display:grid;grid-template-columns:auto 320px;gap:20px;align-items:start;justify-content:center">
      <div>
        ${playerCard(topName,'opp',flipTop)}
        <div class="boardWrap" style="margin:8px 0"><div id="board"></div></div>
