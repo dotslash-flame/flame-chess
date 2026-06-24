@@ -2842,6 +2842,114 @@ function maybeRunPremove(){
   if(uci){ state.premove.shift(); if(state.review.active) reviewLive(); doMove(uci); } // rest of the chain stays queued
   else { state.premove=[]; renderBoard(); } // chain broke (illegal) -> cancel remaining
 }
+
+// ===== game review: client-side Stockfish (F5) =====
+const REVIEW = { worker:null, ready:false, cur:null, running:false, cancel:false, depth:12 };
+const SF_URL = 'https://cdn.jsdelivr.net/npm/stockfish@10.0.2/src/stockfish.asm.js'; // self-contained asm.js (no wasm sibling), Blob-worker friendly
+function reviewEngineInit(){
+  return new Promise((resolve,reject)=>{
+    if(REVIEW.worker && REVIEW.ready) return resolve();
+    try{
+      // cross-origin Worker is blocked, so load the CDN script via a same-origin Blob shim
+      const blob=new Blob(['importScripts('+JSON.stringify(SF_URL)+');'],{type:'application/javascript'});
+      const w=new Worker(URL.createObjectURL(blob)); REVIEW.worker=w; REVIEW.ready=false;
+      let booted=false;
+      const to=setTimeout(()=>{ if(!booted){ try{w.terminate();}catch(_){} REVIEW.worker=null; reject(new Error('timeout')); } },20000);
+      w.onmessage=e=>{ const line=typeof e.data==='string'?e.data:((e.data&&e.data.data)||'');
+        if(!booted && line.indexOf('uciok')>=0){ booted=true; clearTimeout(to); REVIEW.ready=true; w.postMessage('setoption name MultiPV value 2'); w.postMessage('isready'); resolve(); return; }
+        reviewOnLine(line); };
+      w.onerror=()=>{ clearTimeout(to); if(!booted){ try{w.terminate();}catch(_){} REVIEW.worker=null; reject(new Error('load failed')); } };
+      w.postMessage('uci');
+    }catch(err){ reject(err); }
+  });
+}
+function reviewOnLine(line){
+  const cur=REVIEW.cur; if(!cur) return;
+  if(line.lastIndexOf('info',0)===0 && line.indexOf(' pv ')>=0){
+    const mp=line.match(/multipv (\d+)/); const idx=mp?parseInt(mp[1],10):1;
+    const sc=line.match(/score (cp|mate) (-?\d+)/);
+    const pvm=line.match(/ pv ([a-h][1-8][a-h][1-8][qrbnQRBN]?)/);
+    const e={}; if(sc){ if(sc[1]==='cp') e.cp=parseInt(sc[2],10); else e.mate=parseInt(sc[2],10); }
+    if(pvm) e.move=pvm[1];
+    cur.pv[idx]=e; if(idx===1 && pvm) cur.best=pvm[1];
+  } else if(line.lastIndexOf('bestmove',0)===0){
+    const bm=line.split(/\s+/)[1]; if(bm && bm!=='(none)') cur.best=bm;
+    const res=cur.res; REVIEW.cur=null; res({best:cur.best, s1:cur.pv[1]||null, s2:cur.pv[2]||null});
+  }
+}
+function reviewAnalyze(fen){ return new Promise(res=>{ REVIEW.cur={res,pv:{},best:null};
+  REVIEW.worker.postMessage('position fen '+fen); REVIEW.worker.postMessage('go depth '+REVIEW.depth); }); }
+function reviewToCp(s){ if(!s) return 0; if(s.mate!=null) return s.mate>0 ? 100000-s.mate : -100000-s.mate; return s.cp||0; }
+function reviewWp(cp){ const c=Math.max(-1200,Math.min(1200,cp)); return 50+50*(2/(1+Math.exp(-0.00368208*c))-1); }
+function reviewMaterial(fen,white){ const c=capturedFromFen(fen); /* diff = white pts - black pts */
+  return white ? c.diff : -c.diff; }
+const REVIEW_BADGES={brilliant:{t:'!!',c:'#1bd0c0'},great:{t:'!',c:'#5b9cf0'},best:{t:'★',c:'#86d98f'},excellent:{t:'✓',c:'#86d98f'},good:{t:'·',c:'#9d968a'},inaccuracy:{t:'?!',c:'#e8c35b'},mistake:{t:'?',c:'#ff9f43'},blunder:{t:'??',c:'#ff8a8a'}};
+function reviewBadge(ev){ const b=ev&&REVIEW_BADGES[ev.cls]; return b?` <span title="${ev.cls}" style="color:${b.c};font-weight:800">${b.t}</span>`:''; }
+function reviewClassify(i, posEval, lastMoves, plies){
+  const before=posEval[i]; if(!before) return null;
+  const after=posEval[i+1];
+  const moverWhite=(i%2===0);
+  const bestBefore=reviewToCp(before.s1);                 // mover POV (side to move at plies[i])
+  const afterActual=after?-reviewToCp(after.s1):bestBefore; // convert opponent POV → mover POV
+  const cpl=Math.max(0,bestBefore-afterActual);
+  const matched=before.best && lastMoves[i] && before.best===lastMoves[i];
+  const gap=(before.s2!=null)?(reviewToCp(before.s1)-reviewToCp(before.s2)):9999;
+  let cls;
+  if(matched){
+    let sac=false;
+    if(i+2<plies.length){ sac=(reviewMaterial(plies[i+2],moverWhite)-reviewMaterial(plies[i],moverWhite))<=-2; }
+    if(sac && bestBefore>=80) cls='brilliant';
+    else if(gap>=180 && cpl<=25) cls='great';
+    else cls='best';
+  } else if(cpl<=20) cls='excellent';
+  else if(cpl<=50) cls='good';
+  else if(cpl<=100) cls='inaccuracy';
+  else if(cpl<=250) cls='mistake';
+  else cls='blunder';
+  const drop=Math.max(0,reviewWp(bestBefore)-reviewWp(afterActual));
+  const acc=Math.max(0,Math.min(100,103.1668*Math.exp(-0.04354*drop)-3.1669+1));
+  return {cls,cpl,acc};
+}
+function reviewSummaryEl(){ return vq('#reviewSummary'); }
+function reviewSetStatus(html){ const e=reviewSummaryEl(); if(e) e.innerHTML=html;
+  const c=vq('#reviewCancel'); if(c) c.onclick=()=>{ REVIEW.cancel=true; }; }
+async function reviewGame(){
+  if(REVIEW.running) return;
+  ensureReviewPlies();
+  const plies=state.review.plies, lastMoves=state.review.lastMoves;
+  if(!plies || plies.length<2){ flashNotice('No moves to review'); return; }
+  const rb=vq('#reviewBtn'); if(rb) rb.disabled=true;
+  REVIEW.running=true; REVIEW.cancel=false;
+  reviewSetStatus('<span class="muted">loading engine…</span> <button class="btn ghost" id="reviewCancel" style="padding:1px 8px">cancel</button>');
+  try{ await reviewEngineInit(); }
+  catch(_){ REVIEW.running=false; if(rb) rb.disabled=false; reviewSetStatus('<span class="bad">Engine unavailable — needs internet (CDN). Try again.</span>'); return; }
+  const N=plies.length-1, posEval=new Array(plies.length);
+  for(let i=0;i<plies.length;i++){
+    if(REVIEW.cancel){ REVIEW.running=false; if(rb) rb.disabled=false; reviewSetStatus('<span class="muted">review cancelled</span>'); return; }
+    reviewSetStatus('analysing '+i+' / '+N+' <button class="btn ghost" id="reviewCancel" style="padding:1px 8px">cancel</button>');
+    posEval[i]=await reviewAnalyze(plies[i]);
+  }
+  const counts={brilliant:0,great:0,best:0,excellent:0,good:0,inaccuracy:0,mistake:0,blunder:0};
+  const accSum={white:0,black:0}, accN={white:0,black:0};
+  state.reviewEval=new Array(lastMoves.length);
+  for(let i=0;i<lastMoves.length;i++){
+    const r=reviewClassify(i,posEval,lastMoves,plies); if(!r) continue;
+    state.reviewEval[i]={cls:r.cls,cpl:r.cpl};
+    counts[r.cls]=(counts[r.cls]||0)+1;
+    const col=(i%2===0)?'white':'black'; accSum[col]+=r.acc; accN[col]++;
+  }
+  REVIEW.running=false; if(rb) rb.disabled=false;
+  const accW=accN.white?Math.round(accSum.white/accN.white):0, accB=accN.black?Math.round(accSum.black/accN.black):0;
+  const wName=esc(state.game.white||'White'), bName=esc(state.game.black||'Black');
+  reviewSetStatus(
+    `<div style="display:flex;gap:10px;justify-content:space-between;font-size:12px;margin-bottom:6px">
+       <span><b>${wName}</b> · accuracy <b style="color:var(--accent2)">${accW}%</b></span>
+       <span><b>${bName}</b> · accuracy <b style="color:var(--accent2)">${accB}%</b></span></div>
+     <div style="font-size:11px;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px">
+       ${['brilliant','great','best','excellent','good','inaccuracy','mistake','blunder'].filter(k=>counts[k]).map(k=>`<span style="color:${REVIEW_BADGES[k].c}">${REVIEW_BADGES[k].t} ${k} ${counts[k]}</span>`).join('')}
+     </div>`);
+  renderMoveList();
+}
 function renderGame(){
   const g=state.game; const spec=state.spectating;
   const flipTop = g.color==='white'?'black':'white';
@@ -2881,6 +2989,7 @@ function renderGame(){
            <button class="btn" id="rvLast" style="padding:4px 9px">⏭</button>
            <span class="muted" id="rvStatus" style="font-size:11px;margin-left:auto"></span>
          </div>
+         <div id="reviewSummary" style="margin-bottom:8px"></div>
          ${controls}
        </div>
        ${chatPanelHtml()}
