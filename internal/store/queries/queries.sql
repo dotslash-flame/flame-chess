@@ -87,5 +87,44 @@ RETURNING id, created_at;
 SELECT m.body, m.created_at, u.display_name AS sender_name, m.sender_id
 FROM game_messages m
 JOIN users u ON u.id = m.sender_id
+WHERE m.game_id = $1 AND m.hidden = false
+ORDER BY m.created_at;
+
+-- name: AdminListUsers :many
+SELECT id, email, display_name, created_at FROM users ORDER BY created_at DESC LIMIT $1;
+
+-- name: AdminAllRatings :many
+SELECT user_id, category, rating, games_played FROM ratings;
+
+-- name: AdminSetRating :exec
+UPDATE ratings SET rating = $3, games_played = $4 WHERE user_id = $1 AND category = $2;
+
+-- name: AdminListGames :many
+SELECT g.*, wu.display_name AS white_name, bu.display_name AS black_name
+FROM games g
+JOIN users wu ON wu.id = g.white_id
+JOIN users bu ON bu.id = g.black_id
+ORDER BY g.started_at DESC
+LIMIT $1;
+
+-- name: AdminGamesByUser :many
+SELECT g.*, wu.display_name AS white_name, bu.display_name AS black_name
+FROM games g
+JOIN users wu ON wu.id = g.white_id
+JOIN users bu ON bu.id = g.black_id
+WHERE g.white_id = $1 OR g.black_id = $1
+ORDER BY g.started_at DESC
+LIMIT $2;
+
+-- name: AdminSetGameVoided :exec
+UPDATE games SET voided = $2 WHERE id = $1;
+
+-- name: AdminSetMessageHidden :exec
+UPDATE game_messages SET hidden = $2 WHERE id = $1;
+
+-- name: AdminGameMessages :many
+SELECT m.id, m.body, m.created_at, m.hidden, m.sender_id, u.display_name AS sender_name
+FROM game_messages m
+JOIN users u ON u.id = m.sender_id
 WHERE m.game_id = $1
 ORDER BY m.created_at;

@@ -8,8 +8,11 @@ import (
 	"testing"
 
 	"github.com/dotslash-flame/flame-chess/internal/auth"
+	"github.com/dotslash-flame/flame-chess/internal/config"
 	"github.com/dotslash-flame/flame-chess/internal/ws"
 )
+
+var testCfg = &config.Config{}
 
 type meResponse struct {
 	UID         string                                       `json:"uid"`
@@ -30,7 +33,7 @@ func TestMeReturnsIdentityAndRatingsForValidCookie(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
 	rec := httptest.NewRecorder()
 
-	meHandler(st, testSecret)(rec, req)
+	meHandler(st, testSecret, testCfg)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -51,7 +54,7 @@ func TestMeRejectsUnknownUser(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-stale")})
 	rec := httptest.NewRecorder()
-	meHandler(newFakeStore(), testSecret)(rec, req)
+	meHandler(newFakeStore(), testSecret, testCfg)(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
 	}
@@ -59,7 +62,7 @@ func TestMeRejectsUnknownUser(t *testing.T) {
 
 func TestMeRejectsMissingCookie(t *testing.T) {
 	rec := httptest.NewRecorder()
-	meHandler(newFakeStore(), testSecret)(rec, httptest.NewRequest(http.MethodGet, "/api/me", nil))
+	meHandler(newFakeStore(), testSecret, testCfg)(rec, httptest.NewRequest(http.MethodGet, "/api/me", nil))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
 	}
@@ -69,7 +72,7 @@ func TestMeRejectsGarbageCookie(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: "garbage.deadbeef"})
 	rec := httptest.NewRecorder()
-	meHandler(newFakeStore(), testSecret)(rec, req)
+	meHandler(newFakeStore(), testSecret, testCfg)(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want 401", rec.Code)
 	}
@@ -83,7 +86,7 @@ func TestPatchMeUpdatesNameAndReSignsCookie(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
 	rec := httptest.NewRecorder()
 
-	patchMeHandler(st, testSecret, cookiePolicy{})(rec, req)
+	patchMeHandler(st, testSecret, cookiePolicy{}, testCfg)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -119,7 +122,7 @@ func TestPatchMeRejectsTakenName(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
 	rec := httptest.NewRecorder()
 
-	patchMeHandler(st, testSecret, cookiePolicy{})(rec, req)
+	patchMeHandler(st, testSecret, cookiePolicy{}, testCfg)(rec, req)
 
 	if rec.Code != http.StatusConflict {
 		t.Errorf("status = %d, want 409", rec.Code)
@@ -134,7 +137,7 @@ func TestPatchMeRejectsInvalidName(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: ws.SessionCookie, Value: signedFor("u-1")})
 	rec := httptest.NewRecorder()
 
-	patchMeHandler(st, testSecret, cookiePolicy{})(rec, req)
+	patchMeHandler(st, testSecret, cookiePolicy{}, testCfg)(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", rec.Code)

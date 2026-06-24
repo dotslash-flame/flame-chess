@@ -38,6 +38,312 @@ func (q *Queries) AbortGame(ctx context.Context, arg AbortGameParams) error {
 	return err
 }
 
+const adminAllRatings = `-- name: AdminAllRatings :many
+SELECT user_id, category, rating, games_played FROM ratings
+`
+
+func (q *Queries) AdminAllRatings(ctx context.Context) ([]Rating, error) {
+	rows, err := q.db.Query(ctx, adminAllRatings)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Rating
+	for rows.Next() {
+		var i Rating
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Category,
+			&i.Rating,
+			&i.GamesPlayed,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminGameMessages = `-- name: AdminGameMessages :many
+SELECT m.id, m.body, m.created_at, m.hidden, m.sender_id, u.display_name AS sender_name
+FROM game_messages m
+JOIN users u ON u.id = m.sender_id
+WHERE m.game_id = $1
+ORDER BY m.created_at
+`
+
+type AdminGameMessagesRow struct {
+	ID         int64
+	Body       string
+	CreatedAt  pgtype.Timestamptz
+	Hidden     bool
+	SenderID   string
+	SenderName string
+}
+
+func (q *Queries) AdminGameMessages(ctx context.Context, gameID string) ([]AdminGameMessagesRow, error) {
+	rows, err := q.db.Query(ctx, adminGameMessages, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminGameMessagesRow
+	for rows.Next() {
+		var i AdminGameMessagesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Body,
+			&i.CreatedAt,
+			&i.Hidden,
+			&i.SenderID,
+			&i.SenderName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminGamesByUser = `-- name: AdminGamesByUser :many
+SELECT g.id, g.white_id, g.black_id, g.category, g.base_seconds, g.increment_sec, g.status, g.result, g.result_reason, g.pgn, g.white_rating_before, g.white_rating_after, g.black_rating_before, g.black_rating_after, g.started_at, g.ended_at, g.voided, wu.display_name AS white_name, bu.display_name AS black_name
+FROM games g
+JOIN users wu ON wu.id = g.white_id
+JOIN users bu ON bu.id = g.black_id
+WHERE g.white_id = $1 OR g.black_id = $1
+ORDER BY g.started_at DESC
+LIMIT $2
+`
+
+type AdminGamesByUserParams struct {
+	WhiteID string
+	Limit   int32
+}
+
+type AdminGamesByUserRow struct {
+	ID                string
+	WhiteID           string
+	BlackID           string
+	Category          string
+	BaseSeconds       int32
+	IncrementSec      int32
+	Status            string
+	Result            pgtype.Text
+	ResultReason      pgtype.Text
+	Pgn               pgtype.Text
+	WhiteRatingBefore pgtype.Int4
+	WhiteRatingAfter  pgtype.Int4
+	BlackRatingBefore pgtype.Int4
+	BlackRatingAfter  pgtype.Int4
+	StartedAt         pgtype.Timestamptz
+	EndedAt           pgtype.Timestamptz
+	Voided            bool
+	WhiteName         string
+	BlackName         string
+}
+
+func (q *Queries) AdminGamesByUser(ctx context.Context, arg AdminGamesByUserParams) ([]AdminGamesByUserRow, error) {
+	rows, err := q.db.Query(ctx, adminGamesByUser, arg.WhiteID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminGamesByUserRow
+	for rows.Next() {
+		var i AdminGamesByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WhiteID,
+			&i.BlackID,
+			&i.Category,
+			&i.BaseSeconds,
+			&i.IncrementSec,
+			&i.Status,
+			&i.Result,
+			&i.ResultReason,
+			&i.Pgn,
+			&i.WhiteRatingBefore,
+			&i.WhiteRatingAfter,
+			&i.BlackRatingBefore,
+			&i.BlackRatingAfter,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.Voided,
+			&i.WhiteName,
+			&i.BlackName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListGames = `-- name: AdminListGames :many
+SELECT g.id, g.white_id, g.black_id, g.category, g.base_seconds, g.increment_sec, g.status, g.result, g.result_reason, g.pgn, g.white_rating_before, g.white_rating_after, g.black_rating_before, g.black_rating_after, g.started_at, g.ended_at, g.voided, wu.display_name AS white_name, bu.display_name AS black_name
+FROM games g
+JOIN users wu ON wu.id = g.white_id
+JOIN users bu ON bu.id = g.black_id
+ORDER BY g.started_at DESC
+LIMIT $1
+`
+
+type AdminListGamesRow struct {
+	ID                string
+	WhiteID           string
+	BlackID           string
+	Category          string
+	BaseSeconds       int32
+	IncrementSec      int32
+	Status            string
+	Result            pgtype.Text
+	ResultReason      pgtype.Text
+	Pgn               pgtype.Text
+	WhiteRatingBefore pgtype.Int4
+	WhiteRatingAfter  pgtype.Int4
+	BlackRatingBefore pgtype.Int4
+	BlackRatingAfter  pgtype.Int4
+	StartedAt         pgtype.Timestamptz
+	EndedAt           pgtype.Timestamptz
+	Voided            bool
+	WhiteName         string
+	BlackName         string
+}
+
+func (q *Queries) AdminListGames(ctx context.Context, limit int32) ([]AdminListGamesRow, error) {
+	rows, err := q.db.Query(ctx, adminListGames, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminListGamesRow
+	for rows.Next() {
+		var i AdminListGamesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WhiteID,
+			&i.BlackID,
+			&i.Category,
+			&i.BaseSeconds,
+			&i.IncrementSec,
+			&i.Status,
+			&i.Result,
+			&i.ResultReason,
+			&i.Pgn,
+			&i.WhiteRatingBefore,
+			&i.WhiteRatingAfter,
+			&i.BlackRatingBefore,
+			&i.BlackRatingAfter,
+			&i.StartedAt,
+			&i.EndedAt,
+			&i.Voided,
+			&i.WhiteName,
+			&i.BlackName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListUsers = `-- name: AdminListUsers :many
+SELECT id, email, display_name, created_at FROM users ORDER BY created_at DESC LIMIT $1
+`
+
+type AdminListUsersRow struct {
+	ID          string
+	Email       string
+	DisplayName string
+	CreatedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) AdminListUsers(ctx context.Context, limit int32) ([]AdminListUsersRow, error) {
+	rows, err := q.db.Query(ctx, adminListUsers, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminListUsersRow
+	for rows.Next() {
+		var i AdminListUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.DisplayName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminSetGameVoided = `-- name: AdminSetGameVoided :exec
+UPDATE games SET voided = $2 WHERE id = $1
+`
+
+type AdminSetGameVoidedParams struct {
+	ID     string
+	Voided bool
+}
+
+func (q *Queries) AdminSetGameVoided(ctx context.Context, arg AdminSetGameVoidedParams) error {
+	_, err := q.db.Exec(ctx, adminSetGameVoided, arg.ID, arg.Voided)
+	return err
+}
+
+const adminSetMessageHidden = `-- name: AdminSetMessageHidden :exec
+UPDATE game_messages SET hidden = $2 WHERE id = $1
+`
+
+type AdminSetMessageHiddenParams struct {
+	ID     int64
+	Hidden bool
+}
+
+func (q *Queries) AdminSetMessageHidden(ctx context.Context, arg AdminSetMessageHiddenParams) error {
+	_, err := q.db.Exec(ctx, adminSetMessageHidden, arg.ID, arg.Hidden)
+	return err
+}
+
+const adminSetRating = `-- name: AdminSetRating :exec
+UPDATE ratings SET rating = $3, games_played = $4 WHERE user_id = $1 AND category = $2
+`
+
+type AdminSetRatingParams struct {
+	UserID      string
+	Category    string
+	Rating      int32
+	GamesPlayed int32
+}
+
+func (q *Queries) AdminSetRating(ctx context.Context, arg AdminSetRatingParams) error {
+	_, err := q.db.Exec(ctx, adminSetRating,
+		arg.UserID,
+		arg.Category,
+		arg.Rating,
+		arg.GamesPlayed,
+	)
+	return err
+}
+
 const ensureRatings = `-- name: EnsureRatings :exec
 INSERT INTO ratings (user_id, category)
 VALUES ($1, 'bullet'), ($1, 'blitz'), ($1, 'rapid')
@@ -92,7 +398,7 @@ func (q *Queries) FinishGame(ctx context.Context, arg FinishGameParams) error {
 }
 
 const gameByID = `-- name: GameByID :one
-SELECT id, white_id, black_id, category, base_seconds, increment_sec, status, result, result_reason, pgn, white_rating_before, white_rating_after, black_rating_before, black_rating_after, started_at, ended_at FROM games WHERE id = $1
+SELECT id, white_id, black_id, category, base_seconds, increment_sec, status, result, result_reason, pgn, white_rating_before, white_rating_after, black_rating_before, black_rating_after, started_at, ended_at, voided FROM games WHERE id = $1
 `
 
 func (q *Queries) GameByID(ctx context.Context, id string) (Game, error) {
@@ -115,6 +421,7 @@ func (q *Queries) GameByID(ctx context.Context, id string) (Game, error) {
 		&i.BlackRatingAfter,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.Voided,
 	)
 	return i, err
 }
@@ -123,7 +430,7 @@ const gameMessages = `-- name: GameMessages :many
 SELECT m.body, m.created_at, u.display_name AS sender_name, m.sender_id
 FROM game_messages m
 JOIN users u ON u.id = m.sender_id
-WHERE m.game_id = $1
+WHERE m.game_id = $1 AND m.hidden = false
 ORDER BY m.created_at
 `
 
@@ -160,7 +467,7 @@ func (q *Queries) GameMessages(ctx context.Context, gameID string) ([]GameMessag
 }
 
 const gamesForUser = `-- name: GamesForUser :many
-SELECT id, white_id, black_id, category, base_seconds, increment_sec, status, result, result_reason, pgn, white_rating_before, white_rating_after, black_rating_before, black_rating_after, started_at, ended_at
+SELECT id, white_id, black_id, category, base_seconds, increment_sec, status, result, result_reason, pgn, white_rating_before, white_rating_after, black_rating_before, black_rating_after, started_at, ended_at, voided
 FROM games
 WHERE (white_id = $1 OR black_id = $1) AND status = 'finished'
 ORDER BY ended_at DESC
@@ -198,6 +505,7 @@ func (q *Queries) GamesForUser(ctx context.Context, arg GamesForUserParams) ([]G
 			&i.BlackRatingAfter,
 			&i.StartedAt,
 			&i.EndedAt,
+			&i.Voided,
 		); err != nil {
 			return nil, err
 		}

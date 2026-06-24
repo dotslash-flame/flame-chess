@@ -25,6 +25,7 @@ type Game struct {
 	BlackRatingAfter  pgtype.Int4
 	StartedAt         pgtype.Timestamptz
 	EndedAt           pgtype.Timestamptz
+	Voided            bool
 }
 
 type GameMessage struct {
@@ -33,6 +34,7 @@ type GameMessage struct {
 	SenderID  string
 	Body      string
 	CreatedAt pgtype.Timestamptz
+	Hidden    bool
 }
 
 type Rating struct {
