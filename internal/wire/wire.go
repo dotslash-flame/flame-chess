@@ -185,6 +185,12 @@ type Pong struct {
 
 func NewPong() Pong { return Pong{Type: TypePong} }
 
+type SessionReplaced struct {
+	Type string `json:"type"`
+}
+
+func NewSessionReplaced() SessionReplaced { return SessionReplaced{Type: "session.replaced"} }
+
 type Error struct {
 	Type string `json:"type"`
 	Code string `json:"code"`

@@ -299,7 +299,11 @@ func (h *Hub) handle(c command) {
 func (h *Hub) handleRegister(c registerCmd) {
 	uid := c.conn.UserID()
 	if old, ok := h.online[uid]; ok && old != c.conn {
-		old.Close()
+		old.Send(wire.NewSessionReplaced())
+		go func(o wire.Conn) {
+			time.Sleep(200 * time.Millisecond)
+			o.Close()
+		}(old)
 	}
 	h.online[uid] = c.conn
 	if gid, ok := h.userGame[uid]; ok {

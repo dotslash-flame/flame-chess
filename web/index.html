@@ -2613,6 +2613,7 @@ function handleWS(m){
     case 'chat.msg': onChatMsg(m); break;
     case 'games.live': state.liveGames=m.games||[]; if(state.view==='lobby') renderLiveGames(); break;
     case 'pong': break;
+    case 'session.replaced': state.deliberateClose=true; if(state.ws){try{state.ws.close();}catch(_){}} showReplacedBanner(); break;
     case 'error': handleChallengeError(m); break;
   }
 }
@@ -3595,6 +3596,8 @@ function showReconnectBanner(){ let b=$('#reconnBanner');
   if(!b){ b=el('div'); b.id='reconnBanner'; b.style.cssText='position:fixed;top:0;left:0;right:0;background:var(--warn);color:#1a1a1a;text-align:center;padding:4px;z-index:60;font-weight:600'; document.body.appendChild(b);}
   b.textContent='Reconnecting…'; b.classList.remove('hidden'); b.style.display='block'; }
 function hideReconnectBanner(){ const b=$('#reconnBanner'); if(b)b.classList.add('hidden'); }
+function showReplacedBanner(){ showReconnectBanner(); const b=$('#reconnBanner');
+  if(b){ b.textContent='Game is open in another tab — tap to use it here'; b.style.cursor='pointer'; b.onclick=()=>location.reload(); } }
 
 // ===== opponent-disconnect banner (pure UI; clock keeps ticking server-side) =====
 let oppBannerTimer=null;
