@@ -5,3 +5,9 @@ e2e/node_modules/
 e2e/screenshots/
 e2e/test-results/
 e2e/playwright-report/
+API.md
+ARCHITECTURE.md
+PROJECT.md
+TEST_INFRA.md
+timeline.md
+e2e/
