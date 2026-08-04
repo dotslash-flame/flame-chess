@@ -6,28 +6,517 @@
 <title>FlameChess</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+<script>
+  (function() {
+    try {
+      var t = localStorage.getItem('flamechess_theme');
+      if (t === 'light' || t === 'dark') {
+        document.documentElement.setAttribute('data-theme', t);
+      } else {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    } catch (_) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  })();
+</script>
 <style>
-  :root{
-    --bg:#161513; --bg2:#211f1c; --panel:#262420; --panel2:#302d28;
-    --txt:#ece8e1; --muted:#9d968a; --line:#ffffff14;
-    --accent:#ff7a2f; --accent2:#ffb056; --ok:#86d98f; --bad:#ff8a8a; --warn:#e8c35b;
-    --light:#e9edcf; --dark:#6d8c4a; --sel:#fbe06b4d; --lastmv:#ff7a2f40; --check:#ff4d4dcc;
-    --radius:14px; --shadow:0 10px 30px #000a; --glow:0 0 24px #ff7a2f33;
+  /* ==========================================================================
+     Flame Chess Design System - CSS Custom Properties & Themes
+     ========================================================================== */
+  :root, [data-theme="dark"] {
+    /* Dark Theme Palette (Dark Slate + Warm Gold / Flame Accent) */
+    --bg: #0f0f10;
+    --bg-main: #0f0f10;
+    --bg2: #161619;
+    --panel: #1a1a1e;
+    --panel-bg: #1a1a1e;
+    --panel2: #242429;
+    --card-bg: #1a1a1e;
+    --modal-backdrop: rgba(0, 0, 0, 0.75);
+    --topbar-bg: rgba(18, 18, 20, 0.85);
+
+    --txt: #f3f4f6;
+    --text-primary: #f3f4f6;
+    --secondary-txt: #9ca3af;
+    --text-secondary: #9ca3af;
+    --muted: #6b7280;
+    --line: #2b2b32;
+
+    --accent: #d5a754;
+    --accent-orange: #ff7a2f;
+    --accent2: #e2b866;
+    --ok: #22c55e;
+    --bad: #ef4444;
+    --warn: #e8c35b;
+
+    --light: #91a398;
+    --dark: #4c6063;
+    --sel: rgba(213, 167, 84, 0.45);
+    --lastmv: rgba(255, 122, 47, 0.35);
+    --check: rgba(239, 68, 68, 0.8);
+
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    --glow: 0 0 24px rgba(213, 167, 84, 0.25);
   }
-  *{box-sizing:border-box;}
-  body{margin:0;font:14px/1.5 'Inter',system-ui,sans-serif;color:var(--txt);min-height:100vh;
-       background:radial-gradient(1100px 560px at 50% -12%,#332d27,transparent 62%),var(--bg);background-attachment:fixed;}
-  .hidden{display:none!important;}
-  .topbar{display:flex;align-items:center;gap:14px;padding:12px 18px;position:sticky;top:0;z-index:40;
-          background:#141312cc;backdrop-filter:blur(12px);border-bottom:1px solid var(--line);}
-  .brand{font-weight:800;font-size:17px;letter-spacing:.3px;
-         background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent;}
-  .navlink{color:var(--muted);cursor:pointer;padding:5px 10px;border-radius:8px;transition:background .15s,color .15s;display:inline-flex;align-items:center;gap:6px;}
-  .navlink:hover,.navlink.active{color:var(--txt);background:#ffffff12;}
-  .spacer{margin-left:auto;}
-  .pill{padding:3px 11px;border-radius:20px;background:#0005;border:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:500;}
-  .pill.ok{color:var(--ok);} .pill.warn{color:var(--warn);} .pill.bad{color:var(--bad);}
+
+  [data-theme="light"] {
+    /* Light Theme Palette (Warm Cream + White + Bronze / Dark Navy Accent) */
+    --bg: #faf8f5;
+    --bg-main: #faf8f5;
+    --bg2: #f3efe8;
+    --panel: #ffffff;
+    --panel-bg: #ffffff;
+    --panel2: #f7f5f0;
+    --card-bg: #ffffff;
+    --modal-backdrop: rgba(15, 23, 42, 0.4);
+    --topbar-bg: rgba(250, 248, 245, 0.9);
+
+    --txt: #1c1917;
+    --text-primary: #1c1917;
+    --secondary-txt: #57534e;
+    --text-secondary: #57534e;
+    --muted: #78716c;
+    --line: #e7e5e4;
+
+    --accent: #8c6239;
+    --accent-orange: #d97706;
+    --accent2: #b08252;
+    --ok: #16a34a;
+    --bad: #dc2626;
+    --warn: #d97706;
+
+    --light: #e8edd0;
+    --dark: #769656;
+    --sel: rgba(245, 246, 130, 0.75);
+    --lastmv: rgba(140, 98, 57, 0.3);
+    --check: rgba(220, 38, 38, 0.75);
+
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(28, 25, 23, 0.08);
+    --glow: 0 0 24px rgba(140, 98, 57, 0.2);
+  }
+
+  /* ==========================================================================
+     Landing Page / Login UI Styles (Milestone M4)
+     ========================================================================== */
+  .landing-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(85vh - 70px);
+    padding: 32px 16px;
+    animation: landingFadeIn 0.3s ease-out;
+  }
+
+  .landing-hero {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .landing-brand-badge {
+    width: 68px;
+    height: 68px;
+    margin: 0 auto 16px auto;
+    border-radius: 20px;
+    background: linear-gradient(135deg, var(--accent-orange), var(--accent));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 38px;
+    box-shadow: var(--glow), 0 8px 24px rgba(0,0,0,0.25);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .landing-brand-badge:hover {
+    transform: scale(1.06) rotate(-3deg);
+  }
+
+  .landing-title {
+    font-family: 'Outfit', 'Playfair Display', 'Inter', sans-serif;
+    font-weight: 800;
+    font-size: 40px;
+    letter-spacing: -0.5px;
+    margin: 0 0 8px 0;
+    background: linear-gradient(135deg, var(--text-primary) 30%, var(--accent-orange));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  [data-theme="dark"] .landing-title {
+    background: linear-gradient(135deg, #ffffff 40%, var(--accent), var(--accent-orange));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .landing-subtitle {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin: 0;
+    font-weight: 500;
+  }
+
+  .landing-card-container {
+    width: 100%;
+    max-width: 420px;
+  }
+
+  .landing-card {
+    position: relative;
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 32px 28px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .card-accent-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent-orange), var(--accent), var(--accent-orange));
+  }
+
+  .card-header {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+
+  .card-emblem {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--bg2);
+    border: 1px solid var(--line);
+    color: var(--accent-orange);
+    margin-bottom: 12px;
+  }
+
+  .card-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0 0 6px 0;
+    color: var(--text-primary);
+  }
+
+  .card-desc {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0;
+    line-height: 1.45;
+  }
+
+  .google-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 12px 20px;
+    font-size: 15px;
+    font-weight: 700;
+    border-radius: 10px;
+    cursor: pointer;
+    background: var(--bg2);
+    color: var(--text-primary);
+    border: 1px solid var(--line);
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  }
+
+  .google-btn:hover {
+    border-color: var(--accent-orange);
+    box-shadow: 0 4px 14px var(--glow);
+    transform: translateY(-2px);
+  }
+
+  [data-theme="dark"] .google-btn {
+    background: linear-gradient(135deg, var(--panel2), var(--bg2));
+    border-color: var(--line);
+  }
+
+  [data-theme="dark"] .google-btn:hover {
+    border-color: var(--accent-orange);
+  }
+
+  .dev-login-block {
+    margin-top: 22px;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 18px 0;
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 600;
+  }
+
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .divider-text {
+    padding: 0 10px;
+  }
+
+  .dev-login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .input-group {
+    display: flex;
+    gap: 8px;
+  }
+
+  .dev-input {
+    flex: 1;
+    background: var(--bg2);
+    color: var(--text-primary);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+  }
+
+  .dev-input:focus {
+    border-color: var(--accent-orange);
+    box-shadow: 0 0 0 3px rgba(255, 122, 47, 0.2);
+  }
+
+  .dev-btn {
+    padding: 10px 18px;
+    font-weight: 700;
+  }
+
+  .auth-msg {
+    font-size: 12px;
+    text-align: center;
+    min-height: 18px;
+  }
+
+  .card-footer {
+    margin-top: 24px;
+    text-align: center;
+    font-size: 13px;
+  }
+
+  .auth-link {
+    color: var(--accent-orange);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .auth-link:hover {
+    text-decoration: underline;
+  }
+
+  @keyframes landingFadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  * { box-sizing: border-box; }
+  
+  html {
+    color-scheme: dark light;
+    font-family: 'Inter', 'Plus Jakarta Sans', 'Outfit', system-ui, -apple-system, sans-serif;
+  }
+
+  body {
+    margin: 0;
+    font: 14px/1.5 'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    color: var(--txt);
+    min-height: 100vh;
+    background: radial-gradient(1100px 560px at 50% -12%, var(--bg2), transparent 62%), var(--bg);
+    background-attachment: fixed;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  .hidden { display: none !important; }
+
+  /* Smooth Theme Transition for Interactive Elements */
+  .topbar, .panel, .btn, .tccard, .clock, input, .navlink, .pill {
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  /* Modernized Top Navigation Header */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 24px;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: var(--topbar-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .brand-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    text-decoration: none;
+  }
+
+  .brand-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+    box-shadow: var(--glow);
+    flex-shrink: 0;
+  }
+
+  .brand-text-block {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+  }
+
+  .brand {
+    font-family: 'Outfit', 'Plus Jakarta Sans', 'Inter', sans-serif;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 0.2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .brand-sub {
+    font-size: 9px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .topbar-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+  }
+
+  .navlink {
+    color: var(--muted);
+    cursor: pointer;
+    padding: 7px 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 13.5px;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid transparent;
+    user-select: none;
+  }
+
+  .navlink:hover {
+    color: var(--txt);
+    background: var(--bg2);
+  }
+
+  .navlink.active {
+    color: var(--txt);
+    background: var(--bg2);
+    border-color: var(--line);
+    font-weight: 700;
+  }
+
+  [data-theme="light"] .navlink.active {
+    color: var(--accent);
+    background: rgba(140, 98, 57, 0.08);
+    border-color: rgba(140, 98, 57, 0.2);
+  }
+
+  .spacer { margin-left: auto; }
+
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .pill {
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: var(--bg2);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pill.ok { color: var(--ok); }
+  .pill.warn { color: var(--warn); }
+  .pill.bad { color: var(--bad); }
+
+  .theme-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px !important;
+    border-radius: 20px !important;
+    border: 1px solid var(--line) !important;
+    background: var(--bg2) !important;
+    color: var(--txt) !important;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .theme-toggle-btn:hover {
+    border-color: var(--accent) !important;
+    box-shadow: 0 2px 8px var(--glow);
+    transform: translateY(-1px);
+  }
+
+  .profile-btn {
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--line);
+    background: var(--bg2);
+  }
+  
+  .profile-btn:hover {
+    border-color: var(--accent);
+  }
   .chatlist{flex:1;overflow:auto;display:flex;flex-direction:column;gap:6px;margin:8px 0 0;padding-right:2px;}
   .chatrow{display:flex;flex-direction:column;max-width:88%;align-self:flex-start;}
   .chatrow.mine{align-self:flex-end;align-items:flex-end;}
@@ -82,11 +571,34 @@
   @media(prefers-reduced-motion:reduce){ .sq .piece{transition:none!important;} }
 
   .ovl{position:fixed;inset:0;background:#000a;backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:50;}
-  .clock{font:700 25px 'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;letter-spacing:.5px;
-         background:#1a1816;border:1px solid var(--line);border-radius:10px;padding:8px 18px;min-width:112px;text-align:center;color:var(--txt);
-         transition:background .15s,color .15s,box-shadow .15s;}
-  .clock.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#1a1411;border-color:transparent;box-shadow:0 4px 14px #ff7a2f55;}
-  .clock.low{color:var(--bad);} .clock.active.low{color:#3a0f0f;background:linear-gradient(135deg,#ff8a8a,#ffb056);}
+  .clock{font:700 24px 'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;letter-spacing:.5px;
+         background:var(--timer-bg-inactive, #1a1816);border:1px solid var(--line);border-radius:10px;padding:8px 16px;min-width:96px;text-align:center;color:var(--timer-text-inactive, var(--txt));
+         transition:all .2s cubic-bezier(.22,.61,.36,1);display:inline-flex;align-items:center;justify-content:center;}
+  .clock.active{background:var(--timer-bg-active, linear-gradient(135deg,var(--accent),var(--accent2)));color:var(--timer-text-active, #1a1411);border-color:transparent;box-shadow:0 0 18px var(--accent-glow, rgba(213,167,84,0.45)), 0 4px 14px rgba(0,0,0,0.2);font-weight:800;animation:clockGlowPulse 2s infinite ease-in-out;}
+  .clock.low{color:var(--bad);border-color:var(--bad);}
+  .clock.active.low{color:#ffffff;background:linear-gradient(135deg,#ef4444,#f97316);box-shadow:0 0 20px rgba(239,68,68,0.6);animation:clockLowPulse 0.8s infinite ease-in-out;}
+
+  @keyframes clockGlowPulse{0%,100%{box-shadow:0 0 12px var(--accent-glow, rgba(213,167,84,0.3));}50%{box-shadow:0 0 22px var(--accent-glow, rgba(213,167,84,0.65));}}
+  @keyframes clockLowPulse{0%,100%{transform:scale(1);box-shadow:0 0 12px rgba(239,68,68,0.5);}50%{transform:scale(1.04);box-shadow:0 0 24px rgba(239,68,68,0.9);}}
+
+  .turn-indicator-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 14px;margin-bottom:6px;background:var(--panel-bg);border:1px solid var(--line);border-radius:10px;font-size:13px;font-weight:600;color:var(--txt);}
+  .turn-badge{display:inline-flex;align-items:center;gap:8px;}
+  .turn-dot{width:10px;height:10px;border-radius:50%;background:var(--muted);box-shadow:0 0 6px currentColor;display:inline-block;}
+  .turn-dot.white{background:#f3f4f6;box-shadow:0 0 8px rgba(243,244,246,0.8);}
+  .turn-dot.black{background:#374151;box-shadow:0 0 8px rgba(55,65,81,0.8);}
+  .turn-dot.active{animation:turnDotPulse 1.5s infinite ease-in-out;}
+  .turn-dot.over{background:var(--warn);box-shadow:0 0 8px var(--warn);}
+  @keyframes turnDotPulse{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.3);opacity:0.7;}}
+  .check-warning-pill{font:800 11px 'JetBrains Mono',ui-monospace,monospace;color:#ffffff;background:var(--bad);padding:2px 8px;border-radius:6px;letter-spacing:.5px;animation:clockLowPulse .8s infinite ease-in-out;}
+
+  .game-actions{display:flex;gap:8px;margin-top:12px;}
+  .danger-btn{background:rgba(239,68,68,0.12)!important;color:var(--bad)!important;border:1px solid rgba(239,68,68,0.3)!important;}
+  .danger-btn:hover:not(:disabled){background:rgba(239,68,68,0.25)!important;border-color:var(--bad)!important;}
+  .draw-btn{background:var(--bg2)!important;color:var(--txt)!important;border:1px solid var(--line)!important;}
+  .draw-btn:hover:not(:disabled){background:var(--panel2)!important;border-color:var(--accent)!important;}
+  .flip-btn{background:var(--bg2)!important;color:var(--secondary-txt)!important;border:1px solid var(--line)!important;}
+  .flip-btn:hover:not(:disabled){background:var(--panel2)!important;color:var(--txt)!important;}
+  .nav-btn{padding:4px 10px!important;font-weight:700!important;}
 
   .pcard{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:14px;}
   .pcard-name>b{font-size:16px;}
@@ -150,6 +662,278 @@
     #view-game>div{grid-template-columns:1fr!important;justify-content:stretch!important;}
     .boardWrap{width:92vw;}
     .topbar{flex-wrap:wrap;gap:8px;}
+  }
+
+  /* ==========================================================================
+     Worker M7: Game Over Modal & Social UI Redesign (Dark & Light Mode)
+     ========================================================================== */
+
+  /* Glassmorphic Game Over Modal Container & Overlay */
+  .ovl#gameOverModal, .ovl {
+    position: fixed;
+    inset: 0;
+    background: var(--modal-backdrop);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+    animation: modalFadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes modalFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  .modal-card {
+    position: relative;
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 28px 24px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  [data-theme="dark"] .modal-card {
+    background: linear-gradient(145deg, rgba(26, 26, 30, 0.96), rgba(22, 22, 25, 0.98));
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 30px rgba(213, 167, 84, 0.15);
+  }
+
+  [data-theme="light"] .modal-card {
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(250, 248, 245, 0.95));
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.15), 0 0 24px rgba(140, 98, 57, 0.08);
+  }
+
+  .modal-accent-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent-orange), var(--accent), var(--accent-orange));
+  }
+
+  .outcome-banner {
+    margin: 12px 0 16px 0;
+  }
+
+  .outcome-title {
+    font-family: 'Outfit', 'Playfair Display', 'Inter', sans-serif;
+    font-size: 32px;
+    font-weight: 800;
+    margin: 4px 0;
+    letter-spacing: -0.5px;
+    line-height: 1.1;
+  }
+
+  .outcome-banner.win .outcome-title {
+    background: linear-gradient(135deg, var(--ok), var(--accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .outcome-banner.loss .outcome-title {
+    background: linear-gradient(135deg, var(--bad), #f87171);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .outcome-banner.draw .outcome-title {
+    background: linear-gradient(135deg, var(--warn), var(--text-secondary));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .victory-status-text {
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    margin: 4px 0 8px 0;
+  }
+
+  .opp-subtext {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .elo-change-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    background: var(--bg2);
+    border: 1px solid var(--line);
+    margin: 12px 0 6px 0;
+  }
+
+  .elo-change-pill.ok {
+    color: var(--ok);
+    border-color: rgba(34, 197, 94, 0.3);
+    background: rgba(34, 197, 94, 0.08);
+  }
+
+  .elo-change-pill.bad {
+    color: var(--bad);
+    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.08);
+  }
+
+  .elo-change-pill.muted {
+    color: var(--muted);
+  }
+
+  .modal-btn-group {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+
+  .modal-btn-group .btn {
+    flex: 1;
+    min-width: 100px;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  /* Chat Panel & Styled Message Bubbles */
+  #chatPanel {
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    box-shadow: var(--shadow);
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+  }
+
+  .chat-messages, .chatlist {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 8px 0 0 0;
+    padding-right: 4px;
+  }
+
+  .chatrow {
+    display: flex;
+    flex-direction: column;
+    max-width: 85%;
+    align-self: flex-start;
+    animation: chatBubbleIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes chatBubbleIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .chatrow.mine {
+    align-self: flex-end;
+    align-items: flex-end;
+  }
+
+  .chat-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+    padding: 0 4px;
+  }
+
+  .chatfrom {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+
+  .chattime {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    opacity: 0.8;
+  }
+
+  .chatbubble {
+    background: var(--bg2);
+    border: 1px solid var(--line);
+    color: var(--txt);
+    border-radius: 12px 12px 12px 2px;
+    padding: 7px 12px;
+    font-size: 13px;
+    line-height: 1.4;
+    word-break: break-word;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  .chatrow.mine .chatbubble {
+    background: linear-gradient(135deg, var(--accent-orange), var(--accent));
+    color: #161514;
+    border: none;
+    font-weight: 600;
+    border-radius: 12px 12px 2px 12px;
+    box-shadow: 0 2px 8px var(--glow);
+  }
+
+  [data-theme="light"] .chatrow.mine .chatbubble {
+    color: #ffffff;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+  }
+
+  .chat-input-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    align-items: center;
+  }
+
+  /* Spectator Panel & Badges */
+  #spectatorPanel {
+    background: var(--panel-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    box-shadow: var(--shadow);
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+  }
+
+  .spectator-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+  }
+
+  .spectator-item {
+    transition: background-color 0.15s ease;
+  }
+
+  .spectator-item:hover {
+    background: var(--bg2);
+    border-radius: 8px;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
   }
   /* ===== Dotslash matrix loader ===== */
   #dlLoader{position:fixed;inset:0;z-index:9999;--dlpink:#ff2d6f;--dlpink2:#ff79a9;--dlmtx:#19ff8a;}
@@ -237,17 +1021,28 @@
   <!-- cburnett SVG piece set (GPLv2+, Colin M.L. Burnett) vendored inline as a <symbol> sprite -->
   <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="p-wK" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linejoin="miter" d="M22.5 11.63V6M20 8h5"/><path fill="#fff" stroke-linecap="butt" stroke-linejoin="miter" d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"/><path fill="#fff" d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-3.5-7.5-13-10.5-16-4-3 6 5 10 5 10z"/><path d="M11.5 30c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0"/></g></symbol><symbol id="p-wQ" viewBox="0 0 45 45"><g fill="#fff" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M8 12a2 2 0 1 1-4 0 2 2 0 1 1 4 0m16.5-4.5a2 2 0 1 1-4 0 2 2 0 1 1 4 0M41 12a2 2 0 1 1-4 0 2 2 0 1 1 4 0M16 8.5a2 2 0 1 1-4 0 2 2 0 1 1 4 0M33 9a2 2 0 1 1-4 0 2 2 0 1 1 4 0"/><path stroke-linecap="butt" d="M9 26c8.5-1.5 21-1.5 27 0l2-12-7 11V11l-5.5 13.5-3-15-3 15-5.5-14V25L7 14z"/><path stroke-linecap="butt" d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5-1.5-18.5-1.5-27 0z"/><path fill="none" d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c6-1 15-1 21 0"/></g></symbol><symbol id="p-wR" viewBox="0 0 45 45"><g fill="#fff" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linecap="butt" d="M9 39h27v-3H9zm3-3v-4h21v4zm-1-22V9h4v2h5V9h5v2h5V9h4v5"/><path d="m34 14-3 3H14l-3-3"/><path stroke-linecap="butt" stroke-linejoin="miter" d="M31 17v12.5H14V17"/><path d="m31 29.5 1.5 2.5h-20l1.5-2.5"/><path fill="none" stroke-linejoin="miter" d="M11 14h23"/></g></symbol><symbol id="p-wB" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><g fill="#fff" stroke-linecap="butt"><path d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.65.54 3 2-.68.97-1.65.99-3 .5-3.39-.97-10.11.46-13.5-1-3.39 1.46-10.11.03-13.5 1-1.35.49-2.32.47-3-.5 1.35-1.94 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"/></g><path stroke-linejoin="miter" d="M17.5 26h10M15 30h15m-7.5-14.5v5M20 18h5"/></g></symbol><symbol id="p-wN" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path fill="#fff" d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"/><path fill="#fff" d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.042-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4.003 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-.994-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-1.992 2.5-3c1 0 1 3 1 3"/><path fill="#000" d="M9.5 25.5a.5.5 0 1 1-1 0 .5.5 0 1 1 1 0m5.433-9.75a.5 1.5 30 1 1-.866-.5.5 1.5 30 1 1 .866.5"/></g></symbol><symbol id="p-wP" viewBox="0 0 45 45"><path fill="#fff" stroke="#000" stroke-linecap="round" stroke-width="1.5" d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z"/></symbol><symbol id="p-bK" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linejoin="miter" d="M22.5 11.6V6"/><path fill="#000" stroke-linecap="butt" stroke-linejoin="miter" d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"/><path fill="#000" d="M11.5 37a22.3 22.3 0 0 0 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-3.5-7.5-13-10.5-16-4-3 6 5 10 5 10z"/><path stroke-linejoin="miter" d="M20 8h5"/><path stroke="#ececec" d="M32 29.5s8.5-4 6-9.7C34.1 14 25 18 22.5 24.6v2.1-2.1C20 18 9.9 14 7 19.9c-2.5 5.6 4.8 9 4.8 9"/><path stroke="#ececec" d="M11.5 30c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0"/></g></symbol><symbol id="p-bQ" viewBox="0 0 45 45"><g fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><g stroke="none"><circle cx="6" cy="12" r="2.75"/><circle cx="14" cy="9" r="2.75"/><circle cx="22.5" cy="8" r="2.75"/><circle cx="31" cy="9" r="2.75"/><circle cx="39" cy="12" r="2.75"/></g><path stroke-linecap="butt" d="M9 26c8.5-1.5 21-1.5 27 0l2.5-12.5L31 25l-.3-14.1-5.2 13.6-3-14.5-3 14.5-5.2-13.6L14 25 6.5 13.5z"/><path stroke-linecap="butt" d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5-1.5-18.5-1.5-27 0z"/><path fill="none" stroke-linecap="butt" d="M11 38.5a35 35 1 0 0 23 0"/><path fill="none" stroke="#ececec" d="M11 29a35 35 1 0 1 23 0m-21.5 2.5h20m-21 3a35 35 1 0 0 22 0m-23 3a35 35 1 0 0 24 0"/></g></symbol><symbol id="p-bR" viewBox="0 0 45 45"><g fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path stroke-linecap="butt" d="M9 39h27v-3H9zm3.5-7 1.5-2.5h17l1.5 2.5zm-.5 4v-4h21v4z"/><path stroke-linecap="butt" stroke-linejoin="miter" d="M14 29.5v-13h17v13z"/><path stroke-linecap="butt" d="M14 16.5 11 14h23l-3 2.5zM11 14V9h4v2h5V9h5v2h5V9h4v5z"/><path fill="none" stroke="#ececec" stroke-linejoin="miter" stroke-width="1" d="M12 35.5h21m-20-4h19m-18-2h17m-17-13h17M11 14h23"/></g></symbol><symbol id="p-bB" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><g fill="#000" stroke-linecap="butt"><path d="M9 36c3.4-1 10.1.4 13.5-2 3.4 2.4 10.1 1 13.5 2 0 0 1.6.5 3 2-.7 1-1.6 1-3 .5-3.4-1-10.1.5-13.5-1-3.4 1.5-10.1 0-13.5 1-1.4.5-2.3.5-3-.5 1.4-2 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"/></g><path stroke="#ececec" stroke-linejoin="miter" d="M17.5 26h10M15 30h15m-7.5-14.5v5M20 18h5"/></g></symbol><symbol id="p-bN" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="#000" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path fill="#000" d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"/><path fill="#000" d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.04-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-1-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-2 2.5-3c1 0 1 3 1 3"/><path fill="#ececec" stroke="#ececec" d="M9.5 25.5a.5.5 0 1 1-1 0 .5.5 0 1 1 1 0m5.43-9.75a.5 1.5 30 1 1-.86-.5.5 1.5 30 1 1 .86.5"/><path fill="#ececec" stroke="none" d="m24.55 10.4-.45 1.45.5.15c3.15 1 5.65 2.49 7.9 6.75S35.75 29.06 35.25 39l-.05.5h2.25l.05-.5c.5-10.06-.88-16.85-3.25-21.34s-5.79-6.64-9.19-7.16z"/></g></symbol><symbol id="p-bP" viewBox="0 0 45 45"><path stroke="#000" stroke-linecap="round" stroke-width="1.5" d="M22.5 9a4 4 0 0 0-3.22 6.38 6.48 6.48 0 0 0-.87 10.65c-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47a6.46 6.46 0 0 0-.87-10.65A4.01 4.01 0 0 0 22.5 9z"/></symbol></svg>
   <div class="topbar hidden" id="topbar">
-    <span class="brand">🔥 FlameChess</span>
-    <span class="navlink" data-view="lobby">Play</span>
-    <span class="navlink" data-view="leaderboard">Leaderboard</span>
-    <span class="navlink" data-view="history">History</span>
-    <span class="navlink hidden" data-view="admin" id="adminNav">Admin</span>
+    <div class="brand-wrap" onclick="showView('lobby')" title="FlameChess Lobby">
+      <div class="brand-icon">🔥</div>
+      <div class="brand-text-block">
+        <span class="brand">FlameChess</span>
+        <span class="brand-sub">Flame University Chess</span>
+      </div>
+    </div>
+    <div class="topbar-nav">
+      <span class="navlink" data-view="lobby"><span style="font-size:13px;opacity:0.85">♟️</span> Play</span>
+      <span class="navlink" data-view="leaderboard"><span style="font-size:13px;opacity:0.85">🏆</span> Leaderboard</span>
+      <span class="navlink" data-view="history"><span style="font-size:13px;opacity:0.85">📜</span> History</span>
+      <span class="navlink hidden" data-view="admin" id="adminNav"><span style="font-size:13px;opacity:0.85">⚙️</span> Admin</span>
+    </div>
     <span class="spacer"></span>
-    <span class="pill" id="onlinePill">online: ?</span>
-    <button class="btn ghost" id="muteBtn" title="Sound" aria-label="Toggle sound" style="padding:4px 8px">🔊</button>
-    <div id="profileMenu" style="position:relative">
-      <span class="navlink" id="profileToggle"><span class="avatar" id="barAvatar"></span> <span id="barName">—</span> ▾</span>
-      <div class="panel hidden" id="profileDropdown" style="position:absolute;right:0;top:30px;width:300px;z-index:20;box-shadow:var(--shadow)"></div>
+    <div class="header-controls">
+      <span class="pill ok" id="onlinePill">online: ?</span>
+      <button class="btn ghost" id="muteBtn" title="Sound" aria-label="Toggle sound" style="padding:4px 8px">🔊</button>
+      <button class="btn ghost theme-toggle-btn" id="themeToggleBtn" title="Toggle Theme" aria-label="Toggle light/dark theme" onclick="toggleTheme()"><span class="theme-icon">☀️</span> <span class="theme-text">Light</span></button>
+      <div id="profileMenu" style="position:relative">
+        <span class="navlink profile-btn" id="profileToggle"><span class="avatar" id="barAvatar"></span> <span id="barName">Hriday Goyal</span> ▾</span>
+        <div class="panel hidden" id="profileDropdown" style="position:absolute;right:0;top:38px;width:300px;z-index:100;box-shadow:var(--shadow)"></div>
+      </div>
     </div>
   </div>
 
@@ -2338,37 +3133,89 @@ function setIdentity(o){
   const a=$('#barAvatar'); if(a) a.innerHTML=avatarInner(state.me.avatar,state.me.name);
   const an=$('#adminNav'); if(an) an.classList.toggle('hidden', !state.me.is_admin);
 }
+function googleLogin() {
+  location.href = '/auth/google/login';
+}
+window.googleLogin = googleLogin;
+
 function renderLanding(){
   $('#view-landing').innerHTML=`
-   <div class="panel" style="max-width:420px;margin:8vh auto;text-align:center;
-        background:radial-gradient(120% 90% at 80% 0%,#3a2415,#242424)">
-     <div style="font-size:40px">🔥</div>
-     <h1 style="margin:6px 0">FlameChess</h1>
-     <p class="muted">Play rated chess with Flame University.</p>
-     <button class="btn primary" id="googleBtn" style="width:100%;margin-top:10px">Login with Google</button>
-     <div id="devBlock" class="hidden" style="margin-top:14px">
-       <div class="muted" style="font-size:12px;margin:8px 0">— or dev login —</div>
-       <div style="display:flex;gap:6px"><input id="devName" value="Alice" style="flex:1">
-         <button class="btn" id="devBtn">Enter</button></div>
-       <div class="muted bad" id="authMsg" style="font-size:12px;margin-top:6px"></div>
-     </div>
-   </div>`;
-  $('#googleBtn').onclick=()=>location.href='/auth/google/login';
+    <div class="landing-view">
+      <div class="landing-hero">
+        <div class="landing-brand-badge">🔥</div>
+        <h1 class="landing-title">FlameChess</h1>
+        <p class="landing-subtitle">Play rated chess with Flame University</p>
+      </div>
+
+      <div class="landing-card-container">
+        <div class="landing-card panel">
+          <div class="card-accent-bar"></div>
+          <div class="card-header">
+            <div class="card-emblem">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+              </svg>
+            </div>
+            <h2 class="card-title">Sign in to Flame Chess</h2>
+            <p class="card-desc">Play rated matches, track ratings, and challenge friends.</p>
+          </div>
+
+          <div class="auth-action-group">
+            <button id="googleLoginBtn" class="btn google-btn" onclick="googleLogin()">
+              <svg class="google-icon" width="20" height="20" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.28v3.15C3.26 21.3 7.31 24 12 24z"/>
+                <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.28C.46 8.21 0 10.05 0 12s.46 3.79 1.28 5.42l4-3.15z"/>
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.28 6.58l4 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+              </svg>
+              <span>Login with Google</span>
+            </button>
+            <button id="googleBtn" class="hidden" onclick="googleLogin()"></button>
+          </div>
+
+          <div id="devBlock" class="dev-login-block hidden">
+            <div class="divider">
+              <span class="divider-text">or dev login</span>
+            </div>
+            <form id="devLoginForm" onsubmit="event.preventDefault(); devLogin();" class="dev-login-form">
+              <div class="input-group">
+                <input type="text" id="devName" name="devName" value="Alice" class="dev-input" placeholder="Enter username..." aria-label="Dev Username" />
+                <button type="submit" id="devBtn" class="btn dev-btn">Enter</button>
+              </div>
+              <div id="authMsg" class="auth-msg bad"></div>
+            </form>
+          </div>
+
+          <div class="card-footer">
+            <span class="muted">Don't have an account? <a href="javascript:void(0)" onclick="googleLogin()" class="auth-link">Sign up</a></span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  if($('#googleLoginBtn')) $('#googleLoginBtn').onclick=googleLogin;
+  if($('#googleBtn')) $('#googleBtn').onclick=googleLogin;
   detectDevLogin();
-  $('#devBtn') && ($('#devBtn').onclick=devLogin);
+  if($('#devBtn')) $('#devBtn').onclick=devLogin;
+  if($('#devLoginForm')) $('#devLoginForm').onsubmit=(e)=>{e.preventDefault(); devLogin();};
 }
 async function detectDevLogin(){
   try{ const r=await api('/auth/dev-login'); const b=$('#devBlock'); if(b) b.classList.toggle('hidden', r.status===404);}catch(_){}
 }
 async function devLogin(){
-  const name=$('#devName').value||'anon'; $('#authMsg').textContent='';
+  const devInput = $('#devName');
+  const name = devInput ? devInput.value || 'anon' : 'anon';
+  const msgEl = $('#authMsg');
+  if(msgEl) msgEl.textContent='';
   try{ const r=await api('/auth/dev-login',{method:'POST',
         headers:{'Content-Type':'application/x-www-form-urlencoded'},
         body:'name='+encodeURIComponent(name)});
-    if(!r.ok){$('#authMsg').textContent='dev-login disabled — use Google';return;}
+    if(!r.ok){if(msgEl) msgEl.textContent='dev-login disabled — use Google';return;}
     setIdentity(await r.json()); enterApp();
-  }catch(e){$('#authMsg').textContent='login failed';}
+  }catch(e){if(msgEl) msgEl.textContent='login failed';}
 }
+window.devLogin = devLogin;
 async function boot(){
   try{ const u=new URL(location.href);
     const c=u.searchParams.get('c'); if(c){ state.linkToken=c; u.searchParams.delete('c'); }
@@ -2378,8 +3225,29 @@ async function boot(){
     if(r.ok){ setIdentity(await r.json()); enterApp(); DL.done(); return; } }catch(_){}
   $('#topbar').classList.add('hidden'); showView('landing'); DL.done();
 }
+// ===== theme switcher =====
+function applyTheme(t){
+  if(t!=='light' && t!=='dark') t='dark';
+  document.documentElement.setAttribute('data-theme', t);
+  try{ localStorage.setItem('flamechess_theme', t); }catch(_){}
+  const btn=$('#themeToggleBtn');
+  if(btn){
+    const isDark=t==='dark';
+    btn.setAttribute('title', isDark ? 'Switch to Light Theme (☀️)' : 'Switch to Dark Theme (🌙)');
+    btn.setAttribute('aria-label', isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme');
+    const icon=btn.querySelector('.theme-icon'); if(icon) icon.textContent=isDark ? '☀️' : '🌙';
+    const txt=btn.querySelector('.theme-text'); if(txt) txt.textContent=isDark ? 'Light' : 'Dark';
+  }
+}
+function toggleTheme(){
+  const cur=document.documentElement.getAttribute('data-theme')||'dark';
+  applyTheme(cur==='dark'?'light':'dark');
+}
+window.toggleTheme = toggleTheme;
+
 function enterApp(){
   $('#topbar').classList.remove('hidden');
+  applyTheme(document.documentElement.getAttribute('data-theme')||'dark');
   renderProfileDropdown(); connectWS(); showView('lobby');
 }
 async function logout(){
@@ -2424,7 +3292,7 @@ function renderBoard(){
   const board=vq('#board'); if(!board) return; board.innerHTML='';
   const reviewing=state.review.active && state.review.plies.length;
   const pieces=(!reviewing && state.premove.length) ? projectedBoard() : fenToBoard(boardFen()||'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR');
-  const flip=state.game.color==='black';
+  const flip=(state.game.color==='black') !== (!!state.game.flipped);
   const ranks=flip?[1,2,3,4,5,6,7,8]:[8,7,6,5,4,3,2,1];
   const files=flip?['h','g','f','e','d','c','b','a']:['a','b','c','d','e','f','g','h'];
   const dests=(!reviewing&&sel)?legalDestsFrom(sel):[];
@@ -2659,66 +3527,198 @@ function flashNotice(t){
 
 // ===== lobby =====
 const TIME_CONTROLS=[
-  {label:'Bullet 1+0',base:60,inc:0,cat:'bullet'},
-  {label:'Blitz 3+2',base:180,inc:2,cat:'blitz'},
-  {label:'Blitz 5+0',base:300,inc:0,cat:'blitz'},
-  {label:'Rapid 10+0',base:600,inc:0,cat:'rapid'},
+  {label:'1|0',base:60,inc:0,cat:'bullet',display:'1+0'},
+  {label:'3|0',base:180,inc:0,cat:'blitz',display:'3+0'},
+  {label:'3|2',base:180,inc:2,cat:'blitz',display:'3+2'},
+  {label:'5|0',base:300,inc:0,cat:'blitz',display:'5+0'},
+  {label:'5|3',base:300,inc:3,cat:'blitz',display:'5+3'},
+  {label:'10|0',base:600,inc:0,cat:'rapid',display:'10+0'},
 ];
-let selectedTC=2; // 5+0
+let selectedTC=3; // 5+0 default
+
+function createChallenge(){
+  return createFriendLink();
+}
+
+function leaveQueue(){
+  wsSend({type:'queue.leave'});
+  searchUI(false);
+}
+
 function renderLobby(){
-  const r=state.me&&state.me.ratings; const cat=TIME_CONTROLS[selectedTC].cat;
+  const r=state.me&&state.me.ratings;
+  const cat=TIME_CONTROLS[selectedTC].cat;
   const rc=r&&r[cat]?r[cat]:null;
+  const displayName=state.me&&state.me.display_name?state.me.display_name:(state.me&&state.me.email?state.me.email:'Player');
+  const initials=displayName.charAt(0).toUpperCase();
+
+  const bulletRating=(r&&r.bullet&&r.bullet.rating)?r.bullet.rating:1500;
+  const blitzRating=(r&&r.blitz&&r.blitz.rating)?r.blitz.rating:1500;
+  const rapidRating=(r&&r.rapid&&r.rapid.rating)?r.rapid.rating:1500;
+
   $('#view-lobby').innerHTML=`
-   <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px">
-     <div class="panel">
-       <div class="me" style="letter-spacing:1px;font-size:11px">PLAY NOW</div>
-       <div class="tcgrid">
-         ${TIME_CONTROLS.map((t,i)=>{const rr=state.me&&state.me.ratings&&state.me.ratings[t.cat];
-           return `<button class="tccard ${i===selectedTC?'sel':''}" data-tc="${i}">
-             <span class="tc-cat">${t.cat}</span>
-             <span class="tc-time">${t.base/60}+${t.inc}</span>
-             <span class="tc-rate">${rr?rr.rating+' rating':'unrated'}</span></button>`;}).join('')}
-       </div>
-       <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
-         <span class="muted">custom</span> base<input id="cbase" class="short" style="width:64px" value="${TIME_CONTROLS[selectedTC].base}">
-         inc<input id="cinc" class="short" style="width:54px" value="${TIME_CONTROLS[selectedTC].inc}">
-       </div>
-       <button class="btn primary" id="joinBtn" style="width:100%">Find match ▸</button>
-       <button class="btn hidden" id="leaveBtn" style="width:100%;margin-top:6px">Cancel search</button>
-       <button class="btn" id="friendBtn" style="width:100%;margin-top:6px">Play a friend (link) 🔗</button>
-       <div class="muted" id="queueMsg" style="margin-top:8px"></div>
-     </div>
-     <div style="display:flex;flex-direction:column;gap:12px">
-       <div class="panel"><div class="muted" style="font-size:11px">YOUR ${cat.toUpperCase()}</div>
-         <div class="me" style="font-size:30px">${rc?rc.rating:'—'}</div>
-         <div class="muted" style="font-size:12px">${rc?rc.games_played+' games':''} ${deltaBadge(state.lastDelta)}</div></div>
-       <div class="panel" id="onlinePanel"><div class="muted" style="font-size:11px">ONLINE</div><div class="muted">loading…</div></div>
-       <div class="panel" id="lbPeek"><div class="muted" style="font-size:11px">TOP ${cat.toUpperCase()}</div><div class="muted">loading…</div></div>
-       <div class="panel" id="liveGamesPanel"><div class="muted" style="font-size:11px">WATCH LIVE GAMES</div><div class="muted">loading…</div></div>
-       <div class="panel" id="recentPeek"><div class="muted" style="font-size:11px">RECENT</div><div class="muted">loading…</div></div>
-     </div>
-   </div>`;
-  document.querySelectorAll('[data-tc]').forEach(b=>b.onclick=()=>{selectedTC=+b.dataset.tc;renderLobby();});
-  $('#joinBtn').onclick=joinQueue; $('#leaveBtn').onclick=()=>{wsSend({type:'queue.leave'});searchUI(false);};
-  $('#friendBtn').onclick=createFriendLink;
+    <!-- User Profile & Summary Header Banner -->
+    <div class="panel" style="margin-bottom:16px;padding:16px 20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
+        <div style="display:flex;align-items:center;gap:14px;">
+          <div class="avatar lg"><i>${esc(initials)}</i></div>
+          <div>
+            <div style="font-size:20px;font-weight:800;font-family:'Outfit',sans-serif;">Welcome back, ${esc(displayName)}</div>
+            <div class="muted" style="font-size:12px;margin-top:2px;">
+              ${rc?rc.games_played+' games played in '+cat:'Ready for a game?'} ${deltaBadge(state.lastDelta)}
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div class="pill" title="Bullet Rating">
+            <span style="font-size:13px;">⚡</span>
+            <span style="font-size:11px;color:var(--muted);font-weight:600;">BULLET</span>
+            <span style="font-size:13px;font-weight:800;color:var(--txt);">${bulletRating}</span>
+          </div>
+          <div class="pill" title="Blitz Rating">
+            <span style="font-size:13px;">🔥</span>
+            <span style="font-size:11px;color:var(--muted);font-weight:600;">BLITZ</span>
+            <span style="font-size:13px;font-weight:800;color:var(--txt);">${blitzRating}</span>
+          </div>
+          <div class="pill" title="Rapid Rating">
+            <span style="font-size:13px;">⏱️</span>
+            <span style="font-size:11px;color:var(--muted);font-weight:600;">RAPID</span>
+            <span style="font-size:13px;font-weight:800;color:var(--txt);">${rapidRating}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Dashboard Grid -->
+    <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px;">
+      <!-- Left Column: Matchmaking & Time Controls -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div class="panel">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div>
+              <div class="me" style="letter-spacing:1px;font-size:11px;text-transform:uppercase;">PLAY CHESS</div>
+              <div style="font-size:16px;font-weight:700;color:var(--txt);">Select Time Control</div>
+            </div>
+            <span class="pill" style="font-size:11px;">Active: ${TIME_CONTROLS[selectedTC].label}</span>
+          </div>
+
+          <div class="tcgrid" style="grid-template-columns:repeat(3, 1fr);">
+            ${TIME_CONTROLS.map((t,i)=>{
+              const rr=state.me&&state.me.ratings&&state.me.ratings[t.cat];
+              return `<button class="tccard ${i===selectedTC?'sel':''}" data-tc="${i}">
+                <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
+                  <span class="tc-cat">${t.cat}</span>
+                  <span style="font-size:11px;opacity:0.8;font-weight:600;">${t.label}</span>
+                </div>
+                <span class="tc-time" style="font-size:17px;margin:2px 0;">${t.display}</span>
+                <span class="tc-rate">${rr?rr.rating+' rating':'unrated'}</span>
+              </button>`;
+            }).join('')}
+          </div>
+
+          <div style="display:flex;gap:10px;align-items:center;margin:12px 0 16px;padding:10px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;">
+            <span class="muted" style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Custom Time:</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="muted" style="font-size:12px;">base (s):</span>
+              <input id="cbase" class="short" style="width:68px;" value="${TIME_CONTROLS[selectedTC].base}">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="muted" style="font-size:12px;">inc (s):</span>
+              <input id="cinc" class="short" style="width:58px;" value="${TIME_CONTROLS[selectedTC].inc}">
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button class="btn primary" id="joinQueueBtn" style="width:100%;font-size:15px;padding:12px;letter-spacing:0.5px;">Seek Game ⚡</button>
+            <button class="btn primary hidden" id="joinBtn" style="display:none;">Seek Game</button>
+            <button class="btn hidden" id="leaveQueueBtn" style="width:100%;font-size:14px;padding:10px;background:var(--bad);color:#fff;border:none;">Cancel Search ✕</button>
+            <button class="btn hidden" id="leaveBtn" style="display:none;">Cancel Search</button>
+            <button class="btn" id="createChallengeBtn" style="width:100%;font-size:13.5px;padding:10px;">Create Challenge Link 🔗</button>
+            <button class="btn hidden" id="friendBtn" style="display:none;">Play a friend</button>
+          </div>
+          <div class="muted" id="queueMsg" style="margin-top:10px;font-size:13px;text-align:center;font-weight:600;"></div>
+        </div>
+      </div>
+
+      <!-- Right Column: Sidebar Panels -->
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <!-- Online & Open Challenges -->
+        <div class="panel" id="onlinePanel">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;">OPEN CHALLENGES & ONLINE USERS</span>
+          </div>
+          <div id="openChallengesList" class="muted">loading…</div>
+        </div>
+
+        <!-- Leaderboard Summary Table -->
+        <div class="panel" id="lbPeek">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;">LEADERBOARD SUMMARY (${cat.toUpperCase()})</span>
+          </div>
+          <div id="leaderboardTable" class="muted">loading…</div>
+        </div>
+
+        <!-- Watch Live Games / Spectator Panel -->
+        <div class="panel" id="spectatorPanel">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;">SPECTATOR PANEL</span>
+            <div class="spectator-badge-container"><span class="spectator-badge pill ok">👁️ Live</span></div>
+          </div>
+          <div id="liveGamesList" class="muted">loading…</div>
+        </div>
+
+        <!-- Recent Games History -->
+        <div class="panel" id="recentPeek">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span class="muted" style="font-size:11px;font-weight:700;letter-spacing:1px;">RECENT GAMES</span>
+          </div>
+          <div class="muted">loading…</div>
+        </div>
+      </div>
+    </div>`;
+
+  document.querySelectorAll('[data-tc]').forEach(b=>b.onclick=()=>{
+    selectedTC=+b.dataset.tc;
+    renderLobby();
+  });
+
+  const jqBtn=$('#joinQueueBtn')||$('#joinBtn');
+  if(jqBtn) jqBtn.onclick=joinQueue;
+  const legacyJBtn=$('#joinBtn');
+  if(legacyJBtn && legacyJBtn!==jqBtn) legacyJBtn.onclick=joinQueue;
+
+  const lqBtn=$('#leaveQueueBtn')||$('#leaveBtn');
+  if(lqBtn) lqBtn.onclick=leaveQueue;
+  const legacyLBtn=$('#leaveBtn');
+  if(legacyLBtn && legacyLBtn!==lqBtn) legacyLBtn.onclick=leaveQueue;
+
+  const ccBtn=$('#createChallengeBtn')||$('#friendBtn');
+  if(ccBtn) ccBtn.onclick=createChallenge;
+  const legacyFBtn=$('#friendBtn');
+  if(legacyFBtn && legacyFBtn!==ccBtn) legacyFBtn.onclick=createChallenge;
+
   loadLbPeek(cat); loadRecentPeek(); renderOnlinePanel(); loadLiveGames();
 }
+
 function renderOnlinePanel(){
-  const box=$('#onlinePanel'); if(!box)return;
+  const box=$('#openChallengesList')||$('#onlinePanel');
+  if(!box)return;
   const me=state.me&&state.me.uid;
   const others=(state.onlineUsers||[]).filter(u=>u.uid!==me);
-  box.innerHTML='<div class="muted" style="font-size:11px">ONLINE — CHALLENGE</div>'+
-    (others.length?others.map(u=>`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
-      <span>${esc(u.name||'anon')}</span>
-      <button class="btn" data-chal="${esc(u.uid)}" data-name="${esc(u.name||'anon')}" style="padding:4px 10px">Challenge</button></div>`).join('')
-     :'<div class="muted">no one else online</div>');
+  const contentHTML=others.length?others.map(u=>`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;padding:4px 0;border-bottom:1px solid var(--line)">
+      <span style="font-weight:600">${esc(u.name||'anon')}</span>
+      <button class="btn" data-chal="${esc(u.uid)}" data-name="${esc(u.name||'anon')}" style="padding:4px 10px;font-size:12px">Challenge ⚔️</button></div>`).join('')
+     :'<div class="muted" style="font-size:13px;padding:4px 0">No other players online right now</div>';
+  box.innerHTML=contentHTML;
   box.querySelectorAll('[data-chal]').forEach(b=>b.onclick=()=>challengeUser(b.dataset.chal,b.dataset.name));
 }
+
 function challengeUser(uid,name){
   const base=+($('#cbase').value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc').value)||0;
   wsSend({type:'challenge.create_direct',opponent_id:uid,base,increment:inc});
   state.pendingOut={uid,name,base,increment:inc}; renderToasts();
 }
+
 async function createFriendLink(){
   const base=+($('#cbase').value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc').value)||0;
   try{ const r=await api('/api/challenges',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -2727,6 +3727,7 @@ async function createFriendLink(){
     const d=await r.json(); showLinkModal(d.url);
   }catch(_){ flashNotice('Could not create link'); }
 }
+
 function showLinkModal(url){
   $('#overlayRoot').innerHTML=`<div class="ovl"><div class="panel" style="min-width:320px;max-width:440px">
     <div class="me" style="font-size:14px;letter-spacing:1px">SHARE THIS LINK</div>
@@ -2741,29 +3742,61 @@ function showLinkModal(url){
   $('#linkClose').onclick=()=>{ $('#overlayRoot').innerHTML=''; };
   inp.focus(); inp.select();
 }
+
 function deltaBadge(d){ if(d==null)return''; const c=d>0?'ok':d<0?'bad':'muted';
   const s=d>0?'+'+d:d<0?'−'+Math.abs(d):'±0'; return `<span class="pill ${c}">${s}</span>`; }
+
 function joinQueue(){
-  const base=+($('#cbase').value)||0, inc=+($('#cinc').value)||0;
+  const base=+($('#cbase').value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc').value)||0;
   wsSend({type:'queue.join',category:TIME_CONTROLS[selectedTC].cat,base,increment:inc}); searchUI(true);
 }
-function searchUI(on){ const jb=$('#joinBtn'),lb=$('#leaveBtn');
-  if(jb)jb.classList.toggle('hidden',on);
-  if(lb)lb.classList.toggle('hidden',!on);
-  if(on)setQueueMsg('searching…'); else setQueueMsg(''); }
-async function loadLbPeek(cat){ const box=$('#lbPeek'); if(!box)return;
-  try{ const r=await api('/api/leaderboard?category='+cat+'&limit=5'); const rows=await r.json();
-    box.innerHTML=`<div class="muted" style="font-size:11px">TOP ${cat.toUpperCase()}</div>`+
-      (rows.length?rows.map(x=>`<div style="display:flex;justify-content:space-between"><span>${x.rank} · ${esc(x.display_name)}</span><span class="me">${x.rating}</span></div>`).join(''):'<div class="muted">no games yet</div>');
-  }catch(_){ box.innerHTML='<div class="bad">failed to load</div>'; } }
+
+function searchUI(on){
+  const jb=$('#joinQueueBtn')||$('#joinBtn');
+  const lb=$('#leaveQueueBtn')||$('#leaveBtn');
+  if(jb) jb.classList.toggle('hidden',on);
+  if(lb) lb.classList.toggle('hidden',!on);
+  if(on) setQueueMsg('Searching for opponent… ⏳'); else setQueueMsg('');
+}
+
+async function loadLbPeek(cat){
+  const box=$('#leaderboardTable')||$('#lbPeek');
+  if(!box)return;
+  try{
+    const r=await api('/api/leaderboard?category='+cat+'&limit=5');
+    const rows=await r.json();
+    if(rows.length){
+      box.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="color:var(--muted);font-size:11px;text-align:left;border-bottom:1px solid var(--line)">
+            <th style="padding:4px">#</th>
+            <th style="padding:4px">PLAYER</th>
+            <th style="padding:4px;text-align:right">RATING</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(x=>`<tr>
+            <td style="padding:6px 4px;font-weight:700;color:var(--accent)">${x.rank}</td>
+            <td style="padding:6px 4px;font-weight:600">${esc(x.display_name)}</td>
+            <td style="padding:6px 4px;text-align:right;font-weight:800;font-family:'JetBrains Mono',monospace">${x.rating}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+    } else {
+      box.innerHTML='<div class="muted" style="font-size:13px;padding:4px 0">no games played yet</div>';
+    }
+  }catch(_){ box.innerHTML='<div class="bad">failed to load</div>'; }
+}
+
 async function loadRecentPeek(){ const box=$('#recentPeek'); if(!box)return;
   try{ const r=await api('/api/games?limit=4'); const g=await r.json();
-    box.innerHTML='<div class="muted" style="font-size:11px">RECENT</div>'+
-      (g.length?g.map(x=>{const wld=resultFor(x);return `<div style="display:flex;justify-content:space-between"><span>vs ${esc(x.opponent)}</span><span class="${wld==='W'?'ok':wld==='L'?'bad':'muted'}">${wld} ${swing(x)}</span></div>`;}).join(''):'<div class="muted">no games yet</div>');
+    box.innerHTML=(g.length?g.map(x=>{const wld=resultFor(x);return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)"><span>vs ${esc(x.opponent)}</span><span class="${wld==='W'?'ok':wld==='L'?'bad':'muted'}" style="font-weight:700">${wld} ${swing(x)}</span></div>`;}).join(''):'<div class="muted" style="font-size:13px;padding:4px 0">no games played yet</div>');
   }catch(_){ box.innerHTML='<div class="bad">failed to load</div>'; } }
+
 function resultFor(g){ if(g.result==='1/2-1/2')return 'D';
   const youWhite=g.color==='white'; const whiteWon=g.result==='1-0';
   return (youWhite===whiteWon)?'W':'L'; }
+
 function swing(g){ const d=g.rating_after-g.rating_before; return d>0?'+'+d:d<0?'−'+Math.abs(d):'±0'; }
 
 // ===== game =====
@@ -2983,52 +4016,92 @@ function reviewProgressHtml(label,pct){
 }
 function renderGame(){
   const g=state.game; const spec=state.spectating;
-  const flipTop = g.color==='white'?'black':'white';
-  // Names: spectators show the two players; players show opponent (top) and self (bottom).
-  const topName = spec ? (g.color==='white'?g.black:g.white) : g.opp;
-  const botName = spec ? (g.color==='white'?g.white:g.black) : (state.me?state.me.name:'You');
+  const userColor = g.color || 'white';
+  const isFlipped = !!state.game.flipped;
+
+  const flipTop = isFlipped ? userColor : (userColor === 'white' ? 'black' : 'white');
+  const flipBot = isFlipped ? (userColor === 'white' ? 'black' : 'white') : userColor;
+
+  let topName, botName, topWho, botWho;
+  if (spec) {
+    topName = flipTop === 'black' ? g.black : g.white;
+    botName = flipBot === 'white' ? g.white : g.black;
+    topWho = 'opp';
+    botWho = 'opp';
+  } else {
+    if (!isFlipped) {
+      topName = g.opp || 'Opponent';
+      botName = state.me ? state.me.name : 'You';
+      topWho = 'opp';
+      botWho = 'you';
+    } else {
+      topName = state.me ? state.me.name : 'You';
+      botName = g.opp || 'Opponent';
+      topWho = 'you';
+      botWho = 'opp';
+    }
+  }
+
   const controls = spec
-    ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    ? `<div style="display:flex;align-items:center;gap:8px;margin-top:12px">
          <span class="pill warn">Spectating</span>
+         <button class="btn flip-btn" id="flipBtn" title="Flip board perspective" style="padding:6px 12px">🔄 Flip</button>
          <button class="btn" id="stopWatchBtn" style="margin-left:auto">Stop watching</button>
        </div>`
-    : `<div style="display:flex;gap:6px">
-         <button class="btn" id="resignBtn">Resign</button>
-         <button class="btn" id="drawBtn">Offer draw</button>
+    : `<div class="game-actions" style="display:flex;gap:8px;margin-top:12px">
+         <button class="btn danger-btn" id="resignBtn" style="flex:1">Resign</button>
+         <button class="btn draw-btn" id="drawBtn" style="flex:1">Offer draw</button>
+         <button class="btn flip-btn" id="flipBtn" title="Flip board perspective" style="padding:6px 12px">🔄 Flip</button>
        </div>
        <div id="drawOffer" class="hidden" style="margin-top:8px">
          <span class="pill warn">draw offered</span>
-         <button class="btn" id="drawYes">Accept</button>
+         <button class="btn primary" id="drawYes">Accept</button>
          <button class="btn" id="drawNo">Decline</button>
        </div>`;
+
   $('#view-game').innerHTML=`
-   <div style="display:grid;grid-template-columns:auto 320px;gap:20px;align-items:start;justify-content:center">
-     <div>
-       ${playerCard(topName,'opp',flipTop)}
-       <div class="boardWrap" style="margin:8px 0"><div id="board"></div></div>
-       ${playerCard(botName,spec?'opp':'you',g.color)}
+   <div class="game-layout" style="display:grid;grid-template-columns:auto 340px;gap:24px;align-items:start;justify-content:center;max-width:1200px;margin:0 auto">
+     <div class="game-left-col" style="display:flex;flex-direction:column;gap:8px">
+       ${playerCard(topName, topWho, flipTop)}
+       <div class="board-section">
+         ${turnIndicatorHtml()}
+         <div class="boardWrap" style="margin:4px 0"><div id="board"></div></div>
+       </div>
+       ${playerCard(botName, botWho, flipBot)}
      </div>
-     <div style="display:flex;flex-direction:column;gap:12px">
-       <div class="panel" style="min-height:240px;display:flex;flex-direction:column">
-         <div class="muted" style="font-size:11px">MOVES</div>
-         <div id="moveList" style="flex:1;overflow:auto;font:12px ui-monospace,monospace;margin:6px 0"></div>
-         <div class="muted" id="lastMoveLbl" style="font-size:12px;margin-bottom:6px"></div>
-         <div id="reviewBar" style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
-           <button class="btn" id="rvFirst" style="padding:4px 9px">⏮</button>
-           <button class="btn" id="rvPrev" style="padding:4px 9px">◀</button>
-           <button class="btn" id="rvNext" style="padding:4px 9px">▶</button>
-           <button class="btn" id="rvLast" style="padding:4px 9px">⏭</button>
-           <span class="muted" id="rvStatus" style="font-size:11px;margin-left:auto"></span>
+     <div class="game-right-col" style="display:flex;flex-direction:column;gap:12px">
+       <div class="panel move-history-panel" id="moveHistory" style="min-height:260px;display:flex;flex-direction:column">
+         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+           <div class="muted" style="font-size:11px;letter-spacing:0.5px;font-weight:700">MOVES</div>
+           <div class="muted" id="lastMoveLbl" style="font-size:11px;font-weight:600"></div>
          </div>
-         <div id="reviewSummary" style="margin-bottom:8px"></div>
+         <div id="moveList" style="flex:1;overflow:auto;font:12px 'JetBrains Mono',ui-monospace,monospace;margin:6px 0;max-height:220px"></div>
+         <div id="reviewBar" style="display:flex;gap:4px;align-items:center;margin-top:6px">
+           <button class="btn nav-btn" id="rvFirst" style="padding:4px 9px" title="First move">|<</button>
+           <button class="btn nav-btn" id="rvPrev" style="padding:4px 9px" title="Previous move"><</button>
+           <button class="btn nav-btn" id="rvNext" style="padding:4px 9px" title="Next move">></button>
+           <button class="btn nav-btn" id="rvLast" style="padding:4px 9px" title="Last move">>|</button>
+           <span class="muted rv-status" id="rvStatus" style="font-size:11px;margin-left:auto;font-weight:600">live</span>
+         </div>
+         <div id="reviewSummary" style="margin-bottom:4px"></div>
          ${controls}
        </div>
        ${chatPanelHtml()}
      </div>
    </div>`;
+
   renderBoard(); renderMoveList(); paintClocks(); renderChat();
   wireReviewBar();
   { const b=$('#board'); if(b) b.oncontextmenu=e=>{ e.preventDefault(); clearPremove(); }; } // right-click cancels a premove
+  
+  const flipBtn = $('#flipBtn');
+  if(flipBtn) {
+    flipBtn.onclick = () => {
+      state.game.flipped = !state.game.flipped;
+      renderGame();
+    };
+  }
+
   if(spec){
     $('#stopWatchBtn').onclick=stopWatching;
   } else {
@@ -3083,19 +4156,44 @@ function trayHtml(capMap,color){ let h='';
 function meRatingChip(){ const cat=state.game.cat;
   const r=state.me&&state.me.ratings&&state.me.ratings[cat]; if(!r) return '';
   return `<span class="ratechip">${r.rating}<span class="ratecat">${cat}</span></span>`; }
+function turnIndicatorHtml(){
+  const g=state.game; if(!g) return '';
+  let label = '', dotClass = 'muted', extra = '';
+  if(g.over){
+    label = g.resultText || (g.winner ? (g.winner==='draw' ? 'Game Drawn' : (g.winner===g.color ? 'You Won!' : 'You Lost')) : 'Game Over');
+    dotClass = 'over';
+  } else {
+    const isMyTurn = g.turn === g.color;
+    const turnName = g.turn === 'white' ? 'White' : 'Black';
+    const inCheck = kingInCheckSquare() != null;
+    dotClass = g.turn + (isMyTurn ? ' active' : '');
+    label = turnName + ' to move';
+    if(!state.spectating && isMyTurn) label += ' (Your turn)';
+    if(inCheck) extra = '<span class="check-warning-pill">CHECK</span>';
+  }
+  return `<div id="turnIndicator" class="turn-indicator-bar">
+    <div class="turn-badge">
+      <span class="turn-dot ${dotClass}"></span>
+      <span class="turn-label">${esc(label)}</span>
+    </div>
+    ${extra}
+  </div>`;
+}
 function playerCard(name,who,color){
   const cap=capturedFromFen(boardFen());
   const myCap=color==='white'?cap.whiteCap:cap.blackCap;
   const adv=color==='white'?cap.diff:-cap.diff;
   const chip=who==='you'?meRatingChip():'';
-  return `<div class="panel pcard">
+  const barId = color==='black' ? 'blackPlayerBar' : 'whitePlayerBar';
+  const clkId = color==='black' ? 'blackClock' : 'whiteClock';
+  return `<div class="panel pcard" id="${barId}">
     ${avatarHTML(who==='you'&&state.me?state.me.avatar:'',name,'lg')}
     <div class="pcard-main">
       <div class="pcard-name"><b>${esc(name||'—')}</b>${chip}</div>
       <div class="cap-tray">${trayHtml(myCap,color)}${adv>0?`<span class="matadv">+${adv}</span>`:''}</div>
     </div>
     <span class="spacer"></span>
-    <span class="clock" id="clk-${color}">—</span></div>`;
+    <span class="clock" id="${clkId}" data-clk-id="clk-${color}">—</span></div>`;
 }
 function renderMoveList(){ const box=vq('#moveList'); if(!box)return;
   const mv=state.game.moves;
@@ -3118,38 +4216,55 @@ function renderMoveList(){ const box=vq('#moveList'); if(!box)return;
 // ===== chat (Phase 7) =====
 function chatPanelHtml(ro){
   const spec=ro||state.spectating;
-  return `<div class="panel" id="chatPanel" style="display:flex;flex-direction:column;min-height:170px;max-height:260px">
-     <div class="muted" style="font-size:11px">CHAT${spec?' · read-only':''}</div>
-     <div id="chatList" class="chatlist"></div>
-     ${spec?'':`<div style="display:flex;gap:6px;margin-top:6px">
+  return `<div class="panel" id="chatPanel" style="display:flex;flex-direction:column;min-height:180px;max-height:280px">
+     <div class="chat-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+       <span class="muted" style="font-size:11px;font-weight:700;letter-spacing:0.5px">💬 CHAT${spec?' · READ-ONLY':''}</span>
+       ${spec?'<span class="pill muted" style="font-size:10px;padding:2px 6px">Spectating</span>':''}
+     </div>
+     <div id="chatMessages" class="chatlist chat-messages" style="flex:1;overflow-y:auto"></div>
+     ${spec?'':`<div class="chat-input-row" style="display:flex;gap:6px;margin-top:8px">
         <input id="chatInput" maxlength="500" placeholder="Say something…" style="flex:1">
-        <button class="btn" id="chatSend">Send</button>
+        <button class="btn primary" id="sendChatBtn" style="padding:6px 14px">Send</button>
        </div>`}
    </div>`;
 }
+
 function renderChat(){
-  const list=vq('#chatList'); if(!list) return;
-  list.innerHTML = state.chat.length ? state.chat.map(c=>
-    `<div class="chatrow ${c.mine?'mine':''}">
-       ${c.mine?'':`<span class="chatfrom">${esc(c.from_name||'?')}</span>`}
+  const list=$('#chatMessages') || $('#chatList') || vq('#chatList'); if(!list) return;
+  list.innerHTML = state.chat.length ? state.chat.map(c=> {
+    const timeStr = c.ts ? new Date(c.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+    return `<div class="chatrow ${c.mine?'mine':''}">
+       <div class="chat-meta">
+         ${c.mine?'':`<span class="chatfrom">${esc(c.from_name||'?')}</span>`}
+         ${timeStr?`<span class="chattime">${timeStr}</span>`:''}
+       </div>
        <span class="chatbubble">${esc(c.text)}</span>
-     </div>`).join('') : '<div class="muted" style="font-size:12px">No messages yet</div>';
+     </div>`;
+  }).join('') : '<div class="muted" style="font-size:12px;text-align:center;padding:12px 0">No messages yet</div>';
   list.scrollTop=list.scrollHeight;
 }
-function wireChat(){
-  const inp=$('#chatInput'), btn=$('#chatSend'); if(!inp||!btn) return;
-  const send=()=>{ const text=inp.value.trim(); if(!text||!state.game.id) return;
-    wsSend({type:'chat.send',game_id:state.game.id,text:text.slice(0,500)}); inp.value=''; };
-  btn.onclick=send;
-  inp.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); } };
+
+function sendChat(){
+  const inp=$('#chatInput'); if(!inp) return;
+  const text=inp.value.trim(); if(!text||!state.game.id) return;
+  wsSend({type:'chat.send',game_id:state.game.id,text:text.slice(0,500)});
+  inp.value='';
 }
+window.sendChat = sendChat;
+
+function wireChat(){
+  const inp=$('#chatInput'), btn=$('#sendChatBtn')||$('#chatSend'); if(!inp||!btn) return;
+  btn.onclick=sendChat;
+  inp.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); sendChat(); } };
+}
+
 function onChatMsg(m){
   const me=state.me&&state.me.uid;
-  state.chat.push({from_name:m.from_name,text:m.text,ts:m.ts,mine:m.from===me});
+  state.chat.push({from_name:m.from_name,text:m.text,ts:m.ts||Date.now(),mine:m.from===me});
   renderChat();
 }
-// Replay/history: load a finished game's stored messages. No history view exists yet —
-// this helper is wired for the Phase 8 replay view to call.
+
+// Replay/history: load a finished game's stored messages.
 async function loadGameMessages(gameId){
   try{ const r=await api('/api/games/'+encodeURIComponent(gameId)); if(!r.ok) return [];
     const d=await r.json(); const me=state.me&&state.me.uid;
@@ -3158,17 +4273,29 @@ async function loadGameMessages(gameId){
 }
 
 // ===== rematch (Phase 7) =====
+function offerRematch(){
+  if(!state.game || !state.game.id) return;
+  wsSend({type:'rematch.offer',game_id:state.game.id});
+  state.rematch={game_id:state.game.id,sent:true};
+  paintRematchArea();
+}
+window.offerRematch = offerRematch;
+
 function onRematchOffered(m){
   state.rematch={game_id:m.game_id, from_name:m.from_name};
   // If the game-over overlay is up, surface Accept/Decline inline; otherwise toast it.
   if($('#rematchArea')) paintRematchArea();
   else flashNotice((m.from_name||'Opponent')+' wants a rematch');
 }
+
 function paintRematchArea(){
   const a=$('#rematchArea'); if(!a) return;
   if(state.spectating){ a.innerHTML=''; return; }
   const rm=state.rematch;
-  if(rm && rm.sent){ a.innerHTML='<button class="btn" disabled style="width:100%">Waiting for opponent…</button>'; return; }
+  if(rm && rm.sent){
+    a.innerHTML='<button class="btn" id="rematchBtn" disabled style="width:100%">Waiting for opponent…</button>';
+    return;
+  }
   if(rm && rm.from_name){
     a.innerHTML=`<div class="muted" style="font-size:12px;margin-bottom:6px"><b>${esc(rm.from_name)}</b> wants a rematch</div>
       <div style="display:flex;gap:8px">
@@ -3178,8 +4305,9 @@ function paintRematchArea(){
     $('#rmDecline').onclick=()=>{ wsSend({type:'rematch.respond',game_id:rm.game_id,accept:false}); state.rematch=null; paintRematchArea(); };
     return;
   }
-  a.innerHTML='<button class="btn primary" id="rmOffer" style="width:100%">Rematch ↻</button>';
-  $('#rmOffer').onclick=()=>{ wsSend({type:'rematch.offer',game_id:state.game.id}); state.rematch={game_id:state.game.id,sent:true}; paintRematchArea(); };
+  a.innerHTML='<button class="btn primary" id="rematchBtn" style="width:100%">Rematch ↻</button>';
+  const btn = $('#rematchBtn') || $('#rmOffer');
+  if(btn) btn.onclick = offerRematch;
 }
 
 // ===== spectating: live games list (Phase 7) =====
@@ -3187,15 +4315,24 @@ async function loadLiveGames(){
   try{ const r=await api('/api/games/live'); if(r.ok){ const d=await r.json(); state.liveGames=d.games||[]; } }catch(_){}
   renderLiveGames();
 }
+
 function renderLiveGames(){
-  const box=$('#liveGamesPanel'); if(!box) return;
+  const box=$('#liveGamesList')||$('#spectatorList')||$('#spectatorPanel')||$('#liveGamesPanel'); if(!box) return;
   const games=state.liveGames||[];
-  box.innerHTML='<div class="muted" style="font-size:11px">WATCH LIVE GAMES</div>'+
-    (games.length?games.map(g=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px">
-      <span style="min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.white||'?')} vs ${esc(g.black||'?')}</span>
+  const spectatorCount = games.length;
+
+  const panelEl = $('#spectatorPanel') || $('#liveGamesPanel');
+  if (panelEl) {
+    const headBadge = panelEl.querySelector('.spectator-badge-container');
+    if (headBadge) headBadge.innerHTML = `<span class="spectator-badge pill ok">👁️ ${spectatorCount} Live</span>`;
+  }
+
+  const contentHTML = (games.length?games.map(g=>`<div class="spectator-item" style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <span style="min-width:0"><span style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${esc(g.white||'?')} vs ${esc(g.black||'?')}</span>
         <span class="muted" style="font-size:11px">${esc(g.category||'')} ${fmtTC(g.base,g.increment)}</span></span>
-      <button class="btn" data-watch="${esc(g.game_id)}" style="padding:4px 10px;flex:none">Watch</button></div>`).join('')
-     :'<div class="muted" style="margin-top:6px">no live games</div>');
+      <button class="btn primary" data-watch="${esc(g.game_id)}" style="padding:4px 10px;flex:none;font-size:12px">Watch 👁️</button></div>`).join('')
+     :'<div class="muted" style="font-size:13px;padding:8px 0;text-align:center">No live games right now</div>');
+  box.innerHTML=contentHTML;
   box.querySelectorAll('[data-watch]').forEach(b=>b.onclick=()=>{ wsSend({type:'spectate.join',game_id:b.dataset.watch}); state.spectating=true; });
 }
 
@@ -3211,7 +4348,7 @@ function stopClock(){ if(clockTimer){clearInterval(clockTimer);clockTimer=null;}
 let lowWarned={white:false,black:false};
 function paintClocks(){ const fmt=ms=>{ms=Math.max(0,ms|0);const s=Math.floor(ms/1000),m=Math.floor(s/60);
     return m+':'+String(s%60).padStart(2,'0');};
-  ['white','black'].forEach(c=>{ const e=$('#clk-'+c); if(!e)return;
+  ['white','black'].forEach(c=>{ const e=$('#'+c+'Clock') || $('#clk-'+c) || vq('#'+c+'Clock') || vq('#clk-'+c); if(!e)return;
     const ms=c==='white'?state.game.whiteMs:state.game.blackMs;
     e.textContent=ms==null?'—':fmt(ms);
     e.classList.toggle('active',!state.game.over&&state.game.turn===c);
@@ -3291,10 +4428,10 @@ function onGameOver(m){
   if(state.spectating){
     playSound('over');
     const res=m.result==='1-0'?'White wins':m.result==='0-1'?'Black wins':'Draw';
-    $('#overlayRoot').innerHTML=`<div class="ovl"><div class="panel" style="text-align:center;min-width:300px">
-      <h2 style="margin:6px 0 2px">${res}</h2>
-      <div class="muted">${esc(m.reason||'')}</div>
-      <div style="margin-top:16px"><button class="btn primary" id="ovlLobby">Back to lobby</button></div></div></div>`;
+    $('#overlayRoot').innerHTML=`<div class="ovl" id="gameOverModal"><div class="panel modal-card glassmorphic-modal" style="text-align:center;min-width:300px;max-width:400px;width:90%">
+      <h2 style="margin:6px 0 2px;font-size:24px;font-weight:800">${res}</h2>
+      <div class="muted" style="font-size:13px">${esc(m.reason||'')}</div>
+      <div style="margin-top:16px"><button class="btn primary" id="ovlLobby" style="width:100%">Back to lobby</button></div></div></div>`;
     $('#ovlLobby').onclick=()=>{ $('#overlayRoot').innerHTML=''; stopWatching(); };
     renderGame();
     return;
@@ -3305,34 +4442,70 @@ function onGameOver(m){
     if(r){ state.lastDelta=r.delta;
       const cls=r.delta>0?'ok':r.delta<0?'bad':'muted';
       const sign=r.delta>0?'+'+r.delta:r.delta<0?'−'+Math.abs(r.delta):'±0';
-      deltaHtml=`<div class="pill ${cls}" style="font-size:16px;margin-top:8px">${r.after} (${sign})</div>`;
+      deltaHtml=`<div class="elo-change-pill ${cls}"><span class="elo-rating">${r.after}</span> <span class="elo-delta">(${sign})</span></div>`;
     } }
   const draw=m.result==='1/2-1/2';
   const youWon=(state.game.color==='white'&&m.result==='1-0')||(state.game.color==='black'&&m.result==='0-1');
   const outcome=draw?'draw':(youWon?'win':'loss');
-  const title=draw?'Draw':(youWon?'You won':'You lost');
+  const title=draw?'Draw':(youWon?'Victory':'Defeat');
+
+  let statusText = '';
+  if (m.reason === 'checkmate') statusText = 'Checkmate';
+  else if (m.reason === 'resignation' || m.reason === 'resign') statusText = 'Resignation';
+  else if (m.reason === 'timeout' || m.reason === 'time' || m.reason === 'out of time' || m.reason === 'time out') statusText = 'Time Out';
+  else if (m.reason) statusText = m.reason.charAt(0).toUpperCase() + m.reason.slice(1);
+  else statusText = '';
+
   const yourK=state.game.color==='black'?'p-bK':'p-wK', oppK=state.game.color==='black'?'p-wK':'p-bK';
   const sym=draw?'p-wK':(youWon?yourK:oppK);
-  $('#overlayRoot').innerHTML=`<div class="ovl"><div class="panel result ${outcome}" style="text-align:center;min-width:300px">
-    <div class="result-glyph"><svg viewBox="0 0 45 45"><use href="#${sym}"/></svg></div>
-    <h2 style="margin:6px 0 2px">${title}</h2>
-    <div class="muted">vs ${esc(state.game.opp||'opponent')} · ${esc(m.reason)}</div>
-    ${deltaHtml}
-    <div id="rematchArea" style="margin-top:14px"></div>
-    <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
-      <button class="btn primary" id="ovlNew">New game ▸</button>
-      <button class="btn" id="ovlReview">⚡ Review</button>
-      <button class="btn" id="ovlLobby">Back to lobby</button>
-    </div></div></div>`;
+
+  $('#overlayRoot').innerHTML=`<div class="ovl" id="gameOverModal">
+    <div class="panel result modal-card glassmorphic-modal ${outcome}" style="text-align:center;min-width:320px;max-width:400px;width:92%">
+      <div class="modal-accent-bar"></div>
+      <div class="result-glyph"><svg viewBox="0 0 45 45"><use href="#${sym}"/></svg></div>
+      <div class="outcome-banner ${outcome}">
+        <h2 class="outcome-title">${title}</h2>
+        ${statusText ? `<div class="victory-status-text">${esc(statusText)}</div>` : ''}
+        <div class="opp-subtext muted">vs <b>${esc(state.game.opp||'opponent')}</b></div>
+      </div>
+      ${deltaHtml}
+      <div id="rematchArea" style="margin-top:14px"></div>
+      <div class="modal-btn-group" style="display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap">
+        <button class="btn primary" id="newGameBtn" id="ovlNew">New game ▸</button>
+        <button class="btn" id="reviewGameBtn" id="ovlReview">⚡ Review</button>
+        <button class="btn ghost" id="ovlLobby">Back to lobby</button>
+      </div>
+    </div>
+  </div>`;
   paintRematchArea();
-  $('#ovlReview').onclick=()=>{ $('#overlayRoot').innerHTML=''; if(typeof reviewGame==='function') reviewGame(); };
-  $('#ovlNew').onclick=()=>{ $('#overlayRoot').innerHTML=''; showView('lobby');
+
+  const handleReview = () => { $('#overlayRoot').innerHTML=''; if(typeof reviewGame==='function') reviewGame(); };
+  const handleNewGame = () => {
+    $('#overlayRoot').innerHTML=''; showView('lobby');
     const inc=(TIME_CONTROLS.find(t=>t.base===state.game.base)||{}).inc||0;
-    wsSend({type:'queue.join',category:state.game.cat,base:state.game.base,increment:inc}); searchUI(true); };
-  $('#ovlLobby').onclick=()=>{ $('#overlayRoot').innerHTML=''; showView('lobby'); };
+    wsSend({type:'queue.join',category:state.game.cat,base:state.game.base,increment:inc}); searchUI(true);
+  };
+  const handleLobby = () => { $('#overlayRoot').innerHTML=''; showView('lobby'); };
+
+  const rev1 = $('#reviewGameBtn'), rev2 = $('#ovlReview');
+  if (rev1) rev1.onclick = handleReview;
+  if (rev2) rev2.onclick = handleReview;
+
+  const new1 = $('#newGameBtn'), new2 = $('#ovlNew');
+  if (new1) new1.onclick = handleNewGame;
+  if (new2) new2.onclick = handleNewGame;
+
+  const lob1 = $('#ovlLobby');
+  if (lob1) lob1.onclick = handleLobby;
+
   refreshMe();
   renderGame();
 }
+
+function showGameOverModal(m){
+  onGameOver(m || { result: '1-0', reason: 'checkmate' });
+}
+window.showGameOverModal = showGameOverModal;
 async function refreshMe(){ try{ const r=await api('/api/me'); if(r.ok){ const o=await r.json();
   if(state.me){ state.me.ratings=o.ratings; } if(state.view==='lobby')renderLobby(); } }catch(_){} }
 

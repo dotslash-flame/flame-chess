@@ -1,0 +1,19 @@
+{
+  "name": "flame-chess-e2e",
+  "version": "1.0.0",
+  "description": "Playwright automated test suite and screenshot verification harness for Flame Chess UI redesign",
+  "main": "capture_screenshots.js",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "capture-screenshots": "node capture_screenshots.js",
+    "start-dev-server": "node dev-server.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  }
+}

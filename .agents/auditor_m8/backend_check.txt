@@ -1,0 +1,44 @@
+=== GIT STATUS -- CMD INTERNAL ===
+error: fsmonitor_ipc__send_query: unspecified error on '.git/fsmonitor--daemon.ipc'
+
+=== GIT DIFF -- CMD INTERNAL ===
+error: fsmonitor_ipc__send_query: unspecified error on '.git/fsmonitor--daemon.ipc'
+
+=== GIT LOG CMD INTERNAL ===
+commit b882ee5f26bbb3e922b9f28c58e69e200981daba
+Author: mahandev <mahandev@users.noreply.github.com>
+Date:   Wed Jul 1 01:11:39 2026 +0530
+
+    fix reconnecting loop
+
+commit 3c7b8a6f246ed79b6d80c793df5c36bb362470f4
+Author: mahandev <mahandev@users.noreply.github.com>
+Date:   Wed Jun 24 14:03:13 2026 +0530
+
+    create admin routes and crud capabilities
+
+commit 715cc6f324a31609637e8eeb80011ea6d4149d04
+Author: mahandev <mahandev@users.noreply.github.com>
+Date:   Fri Jun 19 01:22:48 2026 +0530
+
+    update backend, added rematch options, added chat db conn and migration, aded speceting options
+
+commit 9aa900b5a342a8b2eaeacf842d9842442b2efeee
+Author: mahandev <mahandev@users.noreply.github.com>
+Date:   Wed Jun 17 00:21:46 2026 +0530
+
+    update backend to support challenges
+
+commit ce7b0164362f85ed49647e885ce77565c922dce6
+Author: mahandev <mahandev@users.noreply.github.com>
+Date:   Tue Jun 16 22:39:35 2026 +0530
+
+    allow avatar url to actually show on the UI
+
+=== OVERALL GIT STATUS ===
+ M web/index.html
+?? .agents/
+?? PROJECT.md
+?? TEST_INFRA.md
+?? e2e/
+error: fsmonitor_ipc__send_query: unspecified error on '.git/fsmonitor--daemon.ipc'
