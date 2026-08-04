@@ -24,6 +24,10 @@ func NewRouter(h *hub.Hub, cfg *config.Config, st Store) http.Handler {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(web.Index)
 	})
+	mux.HandleFunc("GET /logo.png", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(web.Logo)
+	})
 	mux.HandleFunc("GET /healthz", healthz)
 
 	if cfg.DevLogin {
