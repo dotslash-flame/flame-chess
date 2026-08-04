@@ -54,10 +54,10 @@
     --line: #2E2B27;
     --line-soft: #262320;
 
-    --accent: #A9542B;
+    --accent: #0057FF;
     --accent-orange: #C2703F;
     --accent2: #C2703F;
-    --accent-wash: #A9542B30;
+    --accent-wash: #0057FF30;
     --ok: #6DAF72;
     --bad: #D4615A;
     --warn: #C9A64D;
@@ -68,7 +68,7 @@
     --light: #E3DBCC;
     --dark: #8A7D6B;
     --sel: #C9903A3D;
-    --lastmv: #A9542B2E;
+    --lastmv: #0057FF2E;
     --check: #B03A30B8;
 
     --radius: 14px;
@@ -98,10 +98,10 @@
     --line: #E3DBCC;
     --line-soft: #EDE8E0;
 
-    --accent: #A9542B;
+    --accent: #0057FF;
     --accent-orange: #C2703F;
     --accent2: #C2703F;
-    --accent-wash: #A9542B20;
+    --accent-wash: #0057FF20;
     --ok: #5A9B5F;
     --bad: #C54E48;
     --warn: #B8923E;
@@ -109,7 +109,7 @@
     --light: #F3F0E9;
     --dark: #C9BDA6;
     --sel: #C9903A3D;
-    --lastmv: #A9542B2E;
+    --lastmv: #0057FF2E;
     --check: #B03A30A0;
 
     --radius: 14px;
@@ -952,7 +952,7 @@
     padding-right: 6px !important;
   }
   /* ===== Dotslash matrix loader ===== */
-  #dlLoader{position:fixed;inset:0;z-index:9999;--dlpink:#ff2d6f;--dlpink2:#ff79a9;--dlmtx:#A9542B;}
+  #dlLoader{position:fixed;inset:0;z-index:9999;--dlpink:#ff2d6f;--dlpink2:#ff79a9;--dlmtx:#0057FF;}
   #dlLoader .dl-door{position:absolute;top:0;height:100%;width:50%;overflow:hidden;background:#050608;
     transition:transform .9s cubic-bezier(.76,0,.18,1);will-change:transform;}
   #dlLoader .dl-left{left:0;} #dlLoader .dl-right{right:0;}
@@ -961,7 +961,7 @@
   #dlLoader .dl-door::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
     background:radial-gradient(120% 80% at 50% 40%,#1a0410aa 0%,#05050899 60%,#050505 100%);}
   #dlLoader .dl-door::before{content:"";position:absolute;top:0;bottom:0;width:1px;z-index:4;
-    background:linear-gradient(#A9542B00,#A9542B,#A9542B00);opacity:0;transition:opacity .25s;}
+    background:linear-gradient(#0057FF00,#0057FF,#0057FF00);opacity:0;transition:opacity .25s;}
   #dlLoader .dl-left::before{right:0;} #dlLoader .dl-right::before{left:0;}
   #dlLoader .dl-inner{position:absolute;top:0;height:100%;width:100vw;z-index:3;
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:32px;}
@@ -4854,7 +4854,7 @@ const DL = (()=>{
       ctx.font=font+"px 'JetBrains Mono',monospace";
       for(let i=0;i<cols;i++){ const c=CH[(Math.random()*CH.length)|0], x=i*font, y=drops[i]*font;
         ctx.fillStyle="#C2703F"; ctx.fillText(c,x,y);
-        ctx.fillStyle="#A9542B"; ctx.fillText(c,x,y-font);
+        ctx.fillStyle="#0057FF"; ctx.fillText(c,x,y-font);
         if(y>canvas.height && Math.random()>0.97) drops[i]=0; drops[i]+=1; }
       rafs.push(requestAnimationFrame(draw));
     }
