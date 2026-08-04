@@ -670,6 +670,12 @@
     40%, 80% { transform: translateX(6px); }
   }
   .illegal-premove { animation: illegalShake 0.4s ease; box-shadow: 0 0 0 3px var(--bad); border-radius: 4px; }
+  .switch { position: relative; display: inline-block; width: 36px; height: 20px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; inset: 0; background-color: var(--line); transition: .3s; border-radius: 34px; }
+  .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 2px; bottom: 2px; background-color: #fff; transition: .3s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+  input:checked + .slider { background-color: var(--accent); }
+  input:checked + .slider:before { transform: translateX(16px); }
   @media(prefers-reduced-motion:reduce){.result,.result .pill,.illegal-premove{animation:none;}}
 
   td,th{padding:4px 8px;border-bottom:1px solid var(--line);}
@@ -3388,6 +3394,8 @@ let optimisticMove=null; // uci of our own drag move already animated locally (s
 function onSquareDown(ev,sq){
   if(!state.game.id||state.game.over||state.spectating||state.review.active) return;
   const myTurn = state.game.turn===state.game.color; // when false, actions queue a premove
+  const premoveEnabled = localStorage.getItem('fc_premove') !== '0';
+  if(!myTurn && !premoveEnabled) return;
   const commit = myTurn ? tryMove : setPremove;
   const pieces = (!myTurn && state.premove.length) ? projectedBoard() : fenToBoard(state.game.fen);
   const mine=isMine(pieces[sq]);
@@ -4550,6 +4558,13 @@ function renderProfileDropdown(){
       <button class="btn ghost" id="nameCancel">×</button></div>
     <div class="bad" id="nameMsg" style="font-size:12px;min-height:14px"></div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0">${card('bullet')}${card('blitz')}${card('rapid')}</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin:10px 0; padding:8px; background:var(--panel); border:1px solid var(--line); border-radius:6px">
+      <span style="font-weight:600; font-size:13px">Smart Premoves</span>
+      <label class="switch">
+        <input type="checkbox" id="premoveToggle" ${localStorage.getItem('fc_premove')!=='0'?'checked':''}>
+        <span class="slider"></span>
+      </label>
+    </div>
     <div class="muted" style="font-size:11px">HISTORY</div>
     <div id="historyList" style="max-height:180px;overflow:auto;font-size:12px">loading…</div>
     <div style="display:flex;gap:6px;margin-top:10px">
@@ -4558,6 +4573,13 @@ function renderProfileDropdown(){
   $('#editNameBtn').onclick=startNameEdit;
   $('#logoutBtn').onclick=logout;
   $('#devToggleBtn').onclick=toggleDevTools;
+  const pmToggle = $('#premoveToggle');
+  if(pmToggle) {
+    pmToggle.onchange = (e) => {
+      localStorage.setItem('fc_premove', e.target.checked ? '1' : '0');
+      if(!e.target.checked) { state.premove = []; renderBoard(); }
+    };
+  }
   loadHistory();
 }
 function startNameEdit(){ $('#nameEdit').classList.remove('hidden');
