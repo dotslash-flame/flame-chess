@@ -664,7 +664,13 @@
   .result.win .result-glyph{box-shadow:0 0 22px var(--accent-wash);border-color:var(--accent-wash);}
   .result .pill{animation:pop .3s .12s both;}
   @keyframes pop{from{transform:scale(.9);opacity:0;}to{transform:scale(1);opacity:1;}}
-  @media(prefers-reduced-motion:reduce){.result,.result .pill{animation:none;}}
+  @keyframes illegalShake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-6px); }
+    40%, 80% { transform: translateX(6px); }
+  }
+  .illegal-premove { animation: illegalShake 0.4s ease; box-shadow: 0 0 0 3px var(--bad); border-radius: 4px; }
+  @media(prefers-reduced-motion:reduce){.result,.result .pill,.illegal-premove{animation:none;}}
 
   td,th{padding:4px 8px;border-bottom:1px solid var(--line);}
   @media(max-width:760px){
@@ -3896,7 +3902,16 @@ function maybeRunPremove(){
     const mv=c.move({from:pm.from,to:pm.to,promotion:pm.promo||'q'});
     if(mv) uci=pm.from+pm.to+(mv.promotion||''); }catch(_){}
   if(uci){ state.premove.shift(); if(state.review.active) reviewLive(); doMove(uci); } // rest of the chain stays queued
-  else { state.premove=[]; renderBoard(); } // chain broke (illegal) -> cancel remaining
+  else { 
+    state.premove=[]; 
+    renderBoard(); 
+    const bWrap = vq('.boardWrap');
+    if(bWrap) {
+      bWrap.classList.remove('illegal-premove');
+      void bWrap.offsetWidth; // trigger reflow
+      bWrap.classList.add('illegal-premove');
+    }
+  } // chain broke (illegal) -> cancel remaining
 }
 
 // ===== game review: client-side Stockfish (F5) =====
