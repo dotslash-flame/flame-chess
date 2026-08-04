@@ -1,0 +1,30 @@
+=== CAPTURED SCREENSHOTS IN e2e/screenshots ===
+board_dark.png           : 2360x90 px, 25624 bytes
+board_light.png          : 2360x90 px, 37679 bytes
+dashboard_dark.png       : 2880x1800 px, 440858 bytes
+dashboard_light.png      : 2880x1800 px, 499659 bytes
+game_over_dark.png       : 2880x1800 px, 141146 bytes
+game_over_light.png      : 2880x1800 px, 151496 bytes
+gameplay_dark.png        : 2880x1800 px, 134419 bytes
+gameplay_light.png       : 2880x1800 px, 167614 bytes
+login_dark.png           : 2880x1800 px, 269167 bytes
+login_light.png          : 2880x1800 px, 301722 bytes
+
+=== STITCH 2 MOCKUPS IN /Users/hriday/Downloads/stitch 2 ===
+flamechess_dashboard_dark_mode_1/screen.png       : 1376x768 px, 680403 bytes
+flamechess_dashboard_dark_mode_2/screen.png       : 1376x768 px, 792461 bytes
+flamechess_dashboard_light_mode_1/screen.png      : 1376x768 px, 566297 bytes
+flamechess_dashboard_light_mode_2/screen.png      : 1376x768 px, 639419 bytes
+flamechess_gameplay_dark_mode/screen.png          : 1376x768 px, 677650 bytes
+flamechess_gameplay_light_mode/screen.png         : 1376x768 px, 755252 bytes
+flamechess_login_dark_mode_1/screen.png           : 1376x768 px, 583350 bytes
+flamechess_login_dark_mode_2/screen.png           : 1376x768 px, 394291 bytes
+flamechess_login_light_mode_1/screen.png          : 1376x768 px, 348197 bytes
+flamechess_login_light_mode_2/screen.png          : 1376x768 px, 578053 bytes
+flamechess_login_light_mode_3/screen.png          : 1376x768 px, 701072 bytes
+game_over_modal_dark_mode/screen.png              : 1376x768 px, 659995 bytes
+game_over_modal_light_mode/screen.png             : 1376x768 px, 666378 bytes
+image.png_1/screen.png                            : 1600x789 px, 239011 bytes
+image.png_2/screen.png                            : 1600x789 px, 140590 bytes
+image.png_3/screen.png                            : 1600x790 px, 166358 bytes
+image.png_4/screen.png                            : 1600x785 px, 171509 bytes
