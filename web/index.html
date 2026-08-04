@@ -3164,14 +3164,6 @@ function renderLanding(){
             <button id="googleBtn" class="hidden" onclick="googleLogin()"></button>
           </div>
 
-          <!-- Offline UI Preview Button -->
-          <div class="divider" style="margin: 24px 0 16px 0;">
-            <span class="divider-text">or</span>
-          </div>
-          <button class="btn" style="width:100%; justify-content:center; display:flex; font-weight:600;" onclick="window.me={id:'test',name:'Test User',rating:1200,ratings:{bullet:1200,blitz:1200,rapid:1200,classical:1200}}; $('#topbar').classList.remove('hidden'); showView('lobby'); renderProfileDropdown();">
-            Preview UI (No Backend)
-          </button>
-
           <div id="devBlock" class="dev-login-block hidden">
             <div class="divider">
               <span class="divider-text">or dev login</span>
@@ -3620,18 +3612,6 @@ function renderLobby(){
                 <span class="tc-rate">${rr?rr.rating+' rating':'unrated'}</span>
               </button>`;
             }).join('')}
-          </div>
-
-          <div style="display:flex;gap:10px;align-items:center;margin:12px 0 16px;padding:10px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;">
-            <span class="muted" style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Custom Time:</span>
-            <div style="display:flex;align-items:center;gap:6px;">
-              <span class="muted" style="font-size:12px;">base (s):</span>
-              <input id="cbase" class="short" style="width:68px;" value="${TIME_CONTROLS[selectedTC].base}">
-            </div>
-            <div style="display:flex;align-items:center;gap:6px;">
-              <span class="muted" style="font-size:12px;">inc (s):</span>
-              <input id="cinc" class="short" style="width:58px;" value="${TIME_CONTROLS[selectedTC].inc}">
-            </div>
           </div>
 
           <div style="display:flex;flex-direction:column;gap:8px;">
