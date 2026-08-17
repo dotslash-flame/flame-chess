@@ -3213,7 +3213,7 @@ function renderLanding(){
   if($('#googleLoginBtn')) $('#googleLoginBtn').onclick=googleLogin;
   if($('#googleBtn')) $('#googleBtn').onclick=googleLogin;
   detectDevLogin();
-  if($('#devBtn')) $('#devBtn').onclick=devLogin;
+  // #devBtn is type=submit inside #devLoginForm -- wiring onclick too fired devLogin twice per click.
   if($('#devLoginForm')) $('#devLoginForm').onsubmit=(e)=>{e.preventDefault(); devLogin();};
 }
 async function detectDevLogin(){
@@ -3731,13 +3731,15 @@ function renderOnlinePanel(){
 }
 
 function challengeUser(uid,name){
-  const base=+($('#cbase').value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc').value)||0;
+  // #cbase/#cinc no longer exist (time-control cards replaced them) -- ?. lets the || fallback run.
+  const base=+($('#cbase')?.value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc')?.value)||0;
   wsSend({type:'challenge.create_direct',opponent_id:uid,base,increment:inc});
   state.pendingOut={uid,name,base,increment:inc}; renderToasts();
 }
 
 async function createFriendLink(){
-  const base=+($('#cbase').value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc').value)||0;
+  // #cbase/#cinc no longer exist (time-control cards replaced them) -- ?. lets the || fallback run.
+  const base=+($('#cbase')?.value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc')?.value)||0;
   try{ const r=await api('/api/challenges',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({base,increment:inc})});
     if(!r.ok){ flashNotice('Could not create link'); return; }
@@ -3764,7 +3766,8 @@ function deltaBadge(d){ if(d==null)return''; const c=d>0?'ok':d<0?'bad':'muted';
   const s=d>0?'+'+d:d<0?'−'+Math.abs(d):'±0'; return `<span class="pill ${c}">${s}</span>`; }
 
 function joinQueue(){
-  const base=+($('#cbase').value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc').value)||0;
+  // #cbase/#cinc no longer exist (time-control cards replaced them) -- ?. lets the || fallback run.
+  const base=+($('#cbase')?.value)||TIME_CONTROLS[selectedTC].base, inc=+($('#cinc')?.value)||0;
   wsSend({type:'queue.join',category:TIME_CONTROLS[selectedTC].cat,base,increment:inc}); searchUI(true);
 }
 
