@@ -55,8 +55,8 @@
     --line-soft: #262320;
 
     --accent: #0057FF;
-    --accent-orange: #C2703F;
-    --accent2: #C2703F;
+    --accent-orange: #0057FF;
+    --accent2: #0057FF;
     --accent-wash: #0057FF30;
     --ok: #6DAF72;
     --bad: #D4615A;
@@ -99,8 +99,8 @@
     --line-soft: #EDE8E0;
 
     --accent: #0057FF;
-    --accent-orange: #C2703F;
-    --accent2: #C2703F;
+    --accent-orange: #0057FF;
+    --accent2: #0057FF;
     --accent-wash: #0057FF20;
     --ok: #5A9B5F;
     --bad: #C54E48;
@@ -975,7 +975,7 @@
   #dlLoader .dl-logo{position:absolute;top:46%;left:50%;transform:translate(-50%,-50%);width:58px;height:auto;
     filter:invert(1);mix-blend-mode:screen;}
   #dlLoader .dl-cap{display:flex;flex-direction:column;align-items:center;gap:9px;}
-  #dlLoader .dl-lead{font-size:11px;letter-spacing:5px;text-transform:uppercase;color:#C2703F;opacity:.7;padding-left:5px;white-space:nowrap;}
+  #dlLoader .dl-lead{font-size:11px;letter-spacing:5px;text-transform:uppercase;color:#0057FF;opacity:.7;padding-left:5px;white-space:nowrap;}
   #dlLoader .dl-brand{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:32px;color:#fff;white-space:nowrap;}
   #dlLoader .dl-ac{color:var(--dlpink2);}
   #dlLoader .dl-cur{display:inline-block;width:10px;height:24px;margin-left:5px;background:var(--dlmtx);
@@ -3190,6 +3190,8 @@ function renderLanding(){
             <button id="googleBtn" class="hidden" onclick="googleLogin()"></button>
           </div>
 
+
+
           <div id="devBlock" class="dev-login-block hidden">
             <div class="divider">
               <span class="divider-text">or dev login</span>
@@ -4141,7 +4143,7 @@ function renderGame(){
     $('#drawOffer').classList.toggle('hidden', !state.game.drawFrom || state.game.over);
     const dis=state.game.over; ['resignBtn','drawBtn'].forEach(id=>{const b=$('#'+id);if(b)b.disabled=dis;});
   }
-  wireChat();
+
   renderDrawPopup();
 }
 function stopWatching(){
@@ -4251,9 +4253,12 @@ function chatPanelHtml(ro){
        ${spec?'<span class="pill muted" style="font-size:10px;padding:2px 6px">Spectating</span>':''}
      </div>
      <div id="chatMessages" class="chatlist chat-messages" style="flex:1;overflow-y:auto"></div>
-     ${spec?'':`<div class="chat-input-row" style="display:flex;gap:6px;margin-top:8px">
-        <input id="chatInput" maxlength="500" placeholder="Say something…" style="flex:1">
-        <button class="btn primary" id="sendChatBtn" style="padding:6px 14px">Send</button>
+     ${spec?'':`<div class="chat-input-row" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn" style="flex:1" onclick="sendPretypedChat('gg')">gg</button>
+        <button class="btn" style="flex:1" onclick="sendPretypedChat('wp')">wp</button>
+        <button class="btn" style="flex:1" onclick="sendPretypedChat('glhf')">glhf</button>
+        <button class="btn" style="flex:1" onclick="sendPretypedChat('hi')">hi</button>
+        <button class="btn" style="flex:1" onclick="sendPretypedChat('Oops!')">Oops!</button>
        </div>`}
    </div>`;
 }
@@ -4273,19 +4278,13 @@ function renderChat(){
   list.scrollTop=list.scrollHeight;
 }
 
-function sendChat(){
-  const inp=$('#chatInput'); if(!inp) return;
-  const text=inp.value.trim(); if(!text||!state.game.id) return;
+function sendPretypedChat(text) {
+  if(!text||!state.game.id) return;
   wsSend({type:'chat.send',game_id:state.game.id,text:text.slice(0,500)});
-  inp.value='';
 }
-window.sendChat = sendChat;
+window.sendPretypedChat = sendPretypedChat;
 
-function wireChat(){
-  const inp=$('#chatInput'), btn=$('#sendChatBtn')||$('#chatSend'); if(!inp||!btn) return;
-  btn.onclick=sendChat;
-  inp.onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); sendChat(); } };
-}
+
 
 function onChatMsg(m){
   const me=state.me&&state.me.uid;
@@ -4856,7 +4855,7 @@ const DL = (()=>{
       ctx.fillStyle="rgba(5,6,8,0.14)"; ctx.fillRect(0,0,canvas.width,canvas.height);
       ctx.font=font+"px 'JetBrains Mono',monospace";
       for(let i=0;i<cols;i++){ const c=CH[(Math.random()*CH.length)|0], x=i*font, y=drops[i]*font;
-        ctx.fillStyle="#C2703F"; ctx.fillText(c,x,y);
+        ctx.fillStyle="#0057FF"; ctx.fillText(c,x,y);
         ctx.fillStyle="#0057FF"; ctx.fillText(c,x,y-font);
         if(y>canvas.height && Math.random()>0.97) drops[i]=0; drops[i]+=1; }
       rafs.push(requestAnimationFrame(draw));
