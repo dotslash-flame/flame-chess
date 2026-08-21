@@ -763,6 +763,11 @@ func (h *Hub) handleSpectateJoin(c spectateJoinCmd) {
 	if conn == nil {
 		return
 	}
+	if oldGid, ok := h.spectatorGame[c.userID]; ok && oldGid != c.gameID {
+		if oldA, ok := h.games[oldGid]; ok {
+			oldA.RemoveSpectator(c.userID)
+		}
+	}
 	a.AddSpectator(c.userID, conn)
 	h.spectatorGame[c.userID] = c.gameID
 }

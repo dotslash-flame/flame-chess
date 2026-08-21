@@ -3,6 +3,7 @@ package recorder
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/dotslash-flame/flame-chess/internal/store"
 )
@@ -22,7 +23,9 @@ func (c *Chat) RecordChat(senderID, body string) {
 	}
 	gameID, store := c.gameID, c.store
 	go func() {
-		if _, _, err := store.InsertGameMessage(context.Background(), gameID, senderID, body); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, _, err := store.InsertGameMessage(ctx, gameID, senderID, body); err != nil {
 			log.Printf("recorder: insert chat for game %s: %v", gameID, err)
 		}
 	}()
