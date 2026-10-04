@@ -11,3 +11,8 @@ PROJECT.md
 TEST_INFRA.md
 timeline.md
 e2e/
+*.log
+.DS_Store
+bin/
+*.exe
+*.out
